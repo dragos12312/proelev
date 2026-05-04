@@ -1,12 +1,8 @@
 <script setup>
-// top bar that every logged in page reuses, logo title and the chat toggle
-import { ref } from 'vue'
+// top bar that every logged in page reuses, just the logo and the title
+// the toast notification mounts here so dms pop up on any page
 import logo from '../assets/logo.png'
-import ChatPanel from './ChatPanel.vue'
-import { currentUser } from '../utils/auth.js'
-
-// chat panel slides in over the page when this is true
-const chatOpen = ref(false)
+import ChatNotification from './ChatNotification.vue'
 </script>
 
 <template>
@@ -16,9 +12,7 @@ const chatOpen = ref(false)
       <h1 class="title">ProElev</h1>
       <p class="tagline">Perseverența duce la reușite!</p>
     </div>
-    <!-- only show the chat button when logged in, the panel needs a user id -->
-    <button v-if="currentUser" class="chat-btn" @click="chatOpen = true" title="Chat">💬</button>
-    <ChatPanel :open="chatOpen" @close="chatOpen = false" />
+    <ChatNotification />
   </div>
 </template>
 
@@ -50,7 +44,7 @@ const chatOpen = ref(false)
   flex: 1;
   align-items: center;
   text-align: center;
-  padding-right: clamp(40px, 9vw, 120px); /* leaves room for the profile avatar and chat button */
+  padding-right: clamp(40px, 9vw, 120px); /* leaves room for the profile avatar */
   min-width: 0;
 }
 
@@ -69,24 +63,7 @@ const chatOpen = ref(false)
   width: 100%;
 }
 
-/* chat button sits between the title and the profile avatar in the top right */
-.chat-btn {
-  position: absolute;
-  right: clamp(56px, 8vw, 96px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: clamp(36px, 4vw, 48px);
-  height: clamp(36px, 4vw, 48px);
-  border-radius: 50%;
-  background: #185FA5;
-  color: white;
-  border: none;
-  font-size: clamp(16px, 2vw, 22px);
-  cursor: pointer;
-}
-.chat-btn:hover { background: #134d87; }
-
 @media (max-width: 600px) {
-  .title-block { padding-right: 96px; }
+  .title-block { padding-right: 48px; }
 }
 </style>

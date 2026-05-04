@@ -111,9 +111,10 @@ async def chat_ws(websocket: WebSocket):
                 # client identifies itself with its user id and name
                 state["user_id"]   = int(msg.get("user_id", 0))
                 state["user_name"] = str(msg.get("user_name", ""))
-                # auto subscribe to the global room
-                global_room = chat_store.ensure_global_room()
-                state["rooms"].add(global_room["id"])
+                # auto subscribe to every room the user can see, that way dms
+                # land in real time even when the panel hasnt been opened yet
+                for room in chat_store.list_rooms_for_user(state["user_id"]):
+                    state["rooms"].add(room["id"])
                 await websocket.send_text(json.dumps({"type": "ready"}))
 
             elif mtype == "subscribe":

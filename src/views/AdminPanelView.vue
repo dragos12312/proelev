@@ -106,7 +106,7 @@ onUnmounted(() => {
               <tr v-for="o in observations" :key="o.id" :class="{ dismissed: o.dismissed }">
                 <td>
                   <div class="who">
-                    <strong>{{ o.user_name || `#${o.user_id}` }}</strong>
+                    <strong>{{ o.user_name || 'necunoscut' }} <span class="uid">#{{ o.user_id }}</span></strong>
                     <span class="email">{{ o.user_email }}</span>
                   </div>
                 </td>
@@ -122,7 +122,7 @@ onUnmounted(() => {
               </tr>
             </tbody>
           </table>
-          <p v-else class="empty">Niciun utilizator pe lista de observație. 👍</p>
+          <p v-else class="empty">Niciun utilizator pe lista de observație.</p>
         </section>
 
         <!-- recent action log -->
@@ -152,7 +152,10 @@ onUnmounted(() => {
                 <tr v-for="l in logs" :key="l.id">
                   <td class="mono">{{ l.created_at.replace('T', ' ').slice(0, 19) }}</td>
                   <td>
-                    <div v-if="l.user_id">{{ l.user_name || `#${l.user_id}` }} <span class="muted">({{ l.role || '-' }})</span></div>
+                    <div v-if="l.user_id">
+                      {{ l.user_name || 'necunoscut' }} <span class="uid">#{{ l.user_id }}</span>
+                      <span class="muted">({{ l.role || '-' }})</span>
+                    </div>
                     <span v-else class="muted">anonim</span>
                   </td>
                   <td><span class="method" :class="l.method.toLowerCase()">{{ l.method }}</span></td>
@@ -199,8 +202,26 @@ onUnmounted(() => {
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #f0f0f0; }
-th { color: #666; font-size: 11px; text-transform: uppercase; }
+th {
+  color: white;
+  background: #185FA5;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* round the corners of the header strip to match the card */
+thead tr th:first-child { border-top-left-radius: 6px; }
+thead tr th:last-child  { border-top-right-radius: 6px; }
 tr.dismissed { opacity: 0.5; }
+
+/* the small grey id chip next to the user name */
+.uid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #888;
+  font-weight: 400;
+  margin-left: 4px;
+}
 
 .who { display: flex; flex-direction: column; line-height: 1.2; }
 .email { color: #888; font-size: 11px; }
