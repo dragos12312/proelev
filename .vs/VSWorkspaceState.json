@@ -1,0 +1,15 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\src",
+    "\\src\\assets",
+    "\\src\\components",
+    "\\src\\router",
+    "\\src\\stores",
+    "\\src\\utils",
+    "\\src\\views",
+    "\\tests"
+  ],
+  "SelectedNode": "\\tests\\homeworks.spec.js",
+  "PreviewInSolutionExplorer": false
+}

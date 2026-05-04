@@ -1,0 +1,91 @@
+# fastapi entry point, wires all the routers and the websocket together
+# data layer is sqlalchemy on top of sqlite, see database.py and models.py
+import json
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from strawberry.fastapi import GraphQLRouter
+
+from routers import homeworks, students, auth, generator, comments, chat, admin
+from graphql_schema import schema as gql_schema
+from database import SessionLocal
+from seed import seed_lookups
+from audit_middleware import AuditMiddleware
+
+
+# startup hook seeds the lookup tables and the default admin if the db is empty
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db = SessionLocal()
+    try:
+        seed_lookups(db)
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(
+    title="ProElev API",
+    description="Backend API for ProElev education management platform",
+    version="2.0.0",
+    lifespan=lifespan,
+)
+
+# open cors so the vite dev server can talk to the api from a different port
+# also lets the cross machine demo work, the client can be on another box
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# gold, audit middleware that logs every request and runs the detector
+# added AFTER cors so the cors preflights still respond first
+app.add_middleware(AuditMiddleware)
+
+app.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
+app.include_router(homeworks.router,  prefix="/homeworks",  tags=["Homeworks"])
+app.include_router(students.router,   prefix="/homeworks",  tags=["Students"])
+app.include_router(comments.router,   prefix="/homeworks",  tags=["Comments"])
+app.include_router(generator.router,  prefix="/generator",  tags=["Generator"])
+app.include_router(chat.router,       prefix="/chat",       tags=["Chat"])
+app.include_router(admin.router,      prefix="/admin",      tags=["Admin"])
+
+# graphql lives under /graphql, same store as the rest endpoints
+graphql_app = GraphQLRouter(gql_schema)
+app.include_router(graphql_app, prefix="/graphql", tags=["GraphQL"])
+
+# list of every connected ws client, we push events to all of them
+_ws_clients: list[WebSocket] = []
+
+
+# sends a json payload to every connected client, drops the ones that have died
+async def broadcast(data: dict):
+    message = json.dumps(data)
+    disconnected = []
+    for client in _ws_clients:
+        try:
+            await client.send_text(message)
+        except Exception:
+            disconnected.append(client)
+    for c in disconnected:
+        _ws_clients.remove(c)
+
+
+# the only ws endpoint, the frontend opens it on login and listens for events
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    _ws_clients.append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        _ws_clients.remove(websocket)
+
+
+@app.get("/", tags=["Health"])
+def root():
+    return {"status": "ProElev API is running"}
