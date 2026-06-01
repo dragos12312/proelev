@@ -10,6 +10,10 @@ sqlalchemy>=2.0.30
 alembic>=1.13.0
 tinydb>=4.8.0
 passlib[bcrypt]>=1.7.4
+# bcrypt 4.x removed the __about__ attribute that passlib 1.7.4 introspects
+# on startup, and tightens the 72-byte test password check too. pin to 3.x
+# until passlib catches up.
+bcrypt<4.0,>=3.2.0
 pyjwt>=2.9.0
 cryptography>=43.0.0
 scikit-learn>=1.4.0
