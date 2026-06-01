@@ -44,3 +44,9 @@ __screenshots__/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Self signed TLS certs, regenerate on each machine with make_cert.py
+src/backend/certs/
+src/backend/proelev.db
+src/backend/chat.json
+src/backend/__pycache__/

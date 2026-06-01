@@ -52,10 +52,13 @@ def test_root():
 
 # AUTH
 class TestAuth:
-    def test_login_success(self):
+    def test_login_factor1_success(self):
+        # silver, login is 3-step. factor 1 returns a challenge instead of a token.
         r = client.post("/auth/login", json={"email": "admin@proelev.ro", "password": "Admin123"})
         assert r.status_code == 200
-        assert r.json()["user"]["email"] == "admin@proelev.ro"
+        body = r.json()
+        assert body["next"] == "email_code"
+        assert "challenge_id" in body
 
     def test_login_wrong_password(self):
         r = client.post("/auth/login", json={"email": "admin@proelev.ro", "password": "wrong"})

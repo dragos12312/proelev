@@ -1,34 +1,56 @@
-// reads the logged in user from sessionStorage and answers role/permission questions
-// the api.js login call stores the whole user object including role and permissions
+// reads the logged in user and the session token from sessionStorage
+// the api.js login call writes both and refreshCurrentUser pulls them back in
+// hasPerm and isAdmin are used by views to gate admin only ui
 
 import { ref } from 'vue'
 
-// reactive snapshot of the current user, views import this to react to login or logout
-export const currentUser = ref(_load())
+const TOKEN_KEY = 'authToken'
+const USER_KEY  = 'currentUser'
 
-function _load() {
-  try {
-    return JSON.parse(sessionStorage.getItem('currentUser')) || null
-  } catch {
-    return null
-  }
+export const currentUser = ref(_loadUser())
+export const authToken   = ref(_loadToken())
+
+function _loadUser() {
+  try { return JSON.parse(sessionStorage.getItem(USER_KEY)) || null }
+  catch { return null }
 }
 
-// call this after a fresh login or after we manually update the user
+function _loadToken() {
+  return sessionStorage.getItem(TOKEN_KEY) || null
+}
+
+// called after login/register, stores both pieces and updates the reactive refs
+export function setSession(user, token) {
+  sessionStorage.setItem(USER_KEY,  JSON.stringify(user))
+  sessionStorage.setItem(TOKEN_KEY, token)
+  currentUser.value = user
+  authToken.value   = token
+}
+
+// called when the sliding refresh middleware ships a new token in the header
+export function setToken(token) {
+  if (!token) return
+  sessionStorage.setItem(TOKEN_KEY, token)
+  authToken.value = token
+}
+
 export function refreshCurrentUser() {
-  currentUser.value = _load()
+  currentUser.value = _loadUser()
+  authToken.value   = _loadToken()
 }
 
 export function isAdmin() {
   return currentUser.value?.role === 'admin'
 }
 
-// true if the logged in user has the given permission code
 export function hasPerm(code) {
   return Array.isArray(currentUser.value?.permissions) && currentUser.value.permissions.includes(code)
 }
 
+// clear everything on logout or on any 401 from the server
 export function logout() {
-  sessionStorage.removeItem('currentUser')
+  sessionStorage.removeItem(USER_KEY)
+  sessionStorage.removeItem(TOKEN_KEY)
   currentUser.value = null
+  authToken.value   = null
 }

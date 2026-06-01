@@ -1,15 +1,22 @@
 """
-Chat router, both REST and websocket endpoints
-REST is used to list rooms and load history, websocket is used for live messages
-the data layer is tinydb in chat_store
+Chat router, REST + websocket. REST uses the bearer dependency, the websocket
+accepts the same token as the first message of the protocol since browsers
+cant attach custom headers to a WS handshake.
 """
 import json
-from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
+import os
+import time
+from collections import deque
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models import User
+# gold defense, chat flood guard, drop clients that spam messages
+WS_FLOOD_LIMIT  = int(os.environ.get("WS_FLOOD_LIMIT",  "30"))   # messages
+WS_FLOOD_WINDOW = int(os.environ.get("WS_FLOOD_WINDOW", "10"))   # seconds
+
+from database import get_db, SessionLocal
+from models import User, ROLE_ADMIN
+from auth import get_current_user, decode_token
 import chat_store
 
 router = APIRouter()
@@ -17,28 +24,21 @@ router = APIRouter()
 
 # ─── REST ─────────────────────────────────────────────────────────────────────
 
-# returns every room the caller can see, the global room is always first
-# the user id comes through as a query param since we dont have proper auth tokens yet
 @router.get("/rooms")
-def my_rooms(user_id: int = Query(...), db: Session = Depends(get_db)):
-    if not db.get(User, user_id):
-        raise HTTPException(status_code=404, detail="User inexistent")
-    return chat_store.list_rooms_for_user(user_id)
+def my_rooms(me: User = Depends(get_current_user)):
+    return chat_store.list_rooms_for_user(me.id)
 
 
 @router.get("/users")
-def list_other_users(user_id: int = Query(...), db: Session = Depends(get_db)):
-    """List of users you can dm, everyone except yourself."""
-    rows = db.query(User).filter(User.id != user_id).all()
+def list_other_users(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.query(User).filter(User.id != me.id).all()
     return [{"id": u.id, "name": u.name, "email": u.email, "role": u.role.name if u.role else None} for u in rows]
 
 
 @router.post("/dm")
-def open_dm(user_id: int = Query(...), other_id: int = Query(...), db: Session = Depends(get_db)):
-    """Open or create the dm between caller and other_id."""
-    me   = db.get(User, user_id)
+def open_dm(other_id: int, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     them = db.get(User, other_id)
-    if not me or not them:
+    if not them:
         raise HTTPException(status_code=404, detail="User inexistent")
     try:
         return chat_store.get_or_create_dm(me.id, them.id, me.name, them.name)
@@ -47,15 +47,13 @@ def open_dm(user_id: int = Query(...), other_id: int = Query(...), db: Session =
 
 
 @router.post("/rooms")
-def create_room(name: str, user_id: int = Query(...), participants: str = "", db: Session = Depends(get_db)):
-    """
-    Special room creation, admin only.
-    participants is a comma separated list of user ids that should be allowed in.
-    """
-    me = db.get(User, user_id)
-    if not me:
-        raise HTTPException(status_code=404, detail="User inexistent")
-    if not me.role or me.role.name != "admin":
+def create_room(
+    name: str,
+    participants: str = "",
+    me: User = Depends(get_current_user),
+):
+    """Admin only special-room creation."""
+    if not me.role or me.role.name != ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="Doar adminul poate crea camere")
     ids = [int(x) for x in participants.split(",") if x.strip()] if participants else []
     if me.id not in ids:
@@ -64,22 +62,18 @@ def create_room(name: str, user_id: int = Query(...), participants: str = "", db
 
 
 @router.get("/rooms/{room_id}/messages")
-def history(room_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
-    if not db.get(User, user_id):
-        raise HTTPException(status_code=404, detail="User inexistent")
-    if not chat_store.can_user_see_room(user_id, room_id):
+def history(room_id: int, me: User = Depends(get_current_user)):
+    if not chat_store.can_user_see_room(me.id, room_id):
         raise HTTPException(status_code=403, detail="Nu ai acces la aceasta camera")
     return chat_store.list_messages(room_id)
 
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 
-# every connected ws client paired with the user id and the rooms they subscribed to
 _clients: list[dict] = []
 
 
 async def _broadcast_to_room(room_id: int, payload: dict) -> None:
-    """Send payload to every client currently subscribed to room_id."""
     msg = json.dumps(payload)
     dead = []
     for c in _clients:
@@ -95,7 +89,12 @@ async def _broadcast_to_room(room_id: int, payload: dict) -> None:
 @router.websocket("/ws")
 async def chat_ws(websocket: WebSocket):
     await websocket.accept()
-    state = {"ws": websocket, "user_id": None, "user_name": None, "rooms": set()}
+    state = {
+        "ws": websocket, "user_id": None, "user_name": None,
+        "rooms": set(),
+        # gold, rolling window of recent message timestamps for flood detection
+        "msg_times": deque(),
+    }
     _clients.append(state)
     try:
         while True:
@@ -108,12 +107,32 @@ async def chat_ws(websocket: WebSocket):
 
             mtype = msg.get("type")
             if mtype == "hello":
-                # client identifies itself with its user id and name
-                state["user_id"]   = int(msg.get("user_id", 0))
-                state["user_name"] = str(msg.get("user_name", ""))
-                # auto subscribe to every room the user can see, that way dms
-                # land in real time even when the panel hasnt been opened yet
-                for room in chat_store.list_rooms_for_user(state["user_id"]):
+                # the client identifies itself with the bearer token, we decode it
+                # rather than trust raw user_id from the wire. previously we did
+                # the latter for silver before tokens existed
+                token = msg.get("token", "")
+                try:
+                    payload = decode_token(token) if token else None
+                except Exception:
+                    payload = None
+                if not payload:
+                    await websocket.send_text(json.dumps({"type": "error", "error": "auth"}))
+                    continue
+
+                # confirm the user actually exists, also grab the display name
+                db = SessionLocal()
+                try:
+                    u = db.get(User, int(payload["sub"]))
+                finally:
+                    db.close()
+                if not u:
+                    await websocket.send_text(json.dumps({"type": "error", "error": "auth"}))
+                    continue
+
+                state["user_id"]   = u.id
+                state["user_name"] = u.name
+                # auto subscribe to every room the user can see
+                for room in chat_store.list_rooms_for_user(u.id):
                     state["rooms"].add(room["id"])
                 await websocket.send_text(json.dumps({"type": "ready"}))
 
@@ -132,6 +151,21 @@ async def chat_ws(websocket: WebSocket):
                     continue
                 if not chat_store.can_user_see_room(state["user_id"], room_id):
                     continue
+
+                # gold defense, slide the window, drop old timestamps
+                now = time.monotonic()
+                times = state["msg_times"]
+                while times and (now - times[0]) > WS_FLOOD_WINDOW:
+                    times.popleft()
+                if len(times) >= WS_FLOOD_LIMIT:
+                    # too many messages too fast, kill the connection
+                    await websocket.send_text(json.dumps(
+                        {"type": "error", "error": "flood, connection closed"}
+                    ))
+                    await websocket.close(code=1008)
+                    break
+                times.append(now)
+
                 try:
                     stored = chat_store.add_message(room_id, state["user_id"], state["user_name"], text)
                 except ValueError:

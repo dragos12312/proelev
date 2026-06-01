@@ -6,6 +6,7 @@ from models import (
     Subject, SchoolClass, Role, Permission, User,
     SUBJECT_NAMES, CLASS_NAMES, PERMISSIONS, ROLE_PERMISSIONS, DEMO_USERS,
 )
+from auth import hash_password
 
 
 def seed_lookups(db: Session) -> None:
@@ -42,13 +43,19 @@ def seed_lookups(db: Session) -> None:
         # so dropping a perm from ROLE_PERMISSIONS removes it from the role too
         role.permissions = [existing_perms[c] for c in perm_codes]
 
-    # demo users, only created the first time
+    # demo users, only created the first time, passwords stored as bcrypt hashes
+    # silver, every demo user also gets a security question so the 3rd login
+    # factor works out of the box. answer is normalized lowercase.
     for u in DEMO_USERS:
         existing = db.query(User).filter_by(email=u["email"]).first()
         if not existing:
             db.add(User(
-                email=u["email"], password=u["password"], name=u["name"],
+                email=u["email"],
+                password_hash=hash_password(u["password"]),
+                name=u["name"],
                 role_id=existing_roles[u["role"]].id,
+                security_question="Care este numele aplicației?",
+                security_answer_hash=hash_password("proelev"),
             ))
 
     db.commit()

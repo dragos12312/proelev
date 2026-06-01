@@ -1,24 +1,26 @@
 <script setup>
 // little profile avatar that floats in the top right corner
 // it sticks just under the header so we watch the header size and move with it
+// click it to open a tiny menu with logout, name, role
 import template from '../assets/template.png'
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { currentUser, logout as clearSession } from '../utils/auth.js'
+import { auth } from '../api.js'
 
-const top = ref(0)
+const router = useRouter()
+const top    = ref(0)
+const open   = ref(false)
 let observer = null
 
 onMounted(() => {
   const header = document.querySelector('.header')
   if (!header) return
-
-  // recalcs where the avatar should sit under the header
   const update = () => {
     const rect = header.getBoundingClientRect()
     top.value = rect.bottom + window.scrollY
   }
-
   update()
-  // if the header resizes, for example when the window changes size, reposition
   observer = new ResizeObserver(update)
   observer.observe(header)
 })
@@ -26,11 +28,25 @@ onMounted(() => {
 onUnmounted(() => {
   if (observer) observer.disconnect()
 })
+
+async function logout() {
+  // call the server so it revokes the session jti, then wipe locally
+  try { await auth.logout() } catch {}
+  clearSession()
+  router.replace('/login')
+}
 </script>
 
 <template>
   <div class="profile" :style="{ top: top + 'px' }">
-    <img :src="template" alt="Profile" class="profile-pic" />
+    <img :src="template" alt="Profile" class="profile-pic" @click="open = !open" />
+    <div v-if="open && currentUser" class="menu" @click.stop>
+      <div class="who">
+        <strong>{{ currentUser.name }}</strong>
+        <span class="role">{{ currentUser.role }}</span>
+      </div>
+      <button class="logout" @click="logout">Deconectare</button>
+    </div>
   </div>
 </template>
 
@@ -50,4 +66,28 @@ onUnmounted(() => {
   cursor: pointer;
   object-fit: cover;
 }
+
+.menu {
+  position: absolute;
+  right: 0;
+  margin-top: 6px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 12px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: 'Inter', sans-serif;
+}
+.who { display: flex; flex-direction: column; line-height: 1.2; font-size: 13px; }
+.role { color: #888; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+.logout {
+  background: #cc0000; color: white; border: none;
+  border-radius: 6px; padding: 8px 10px;
+  cursor: pointer; font-size: 13px; font-weight: 700;
+}
+.logout:hover { background: #a00000; }
 </style>

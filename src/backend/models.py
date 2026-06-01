@@ -25,6 +25,16 @@ role_permission = Table(
 )
 
 
+# assignment 5 gold, many to many between student submissions and tags
+# the heavy compute stat aggregates grades by tag across the m2m, which is
+# slow until we add indices and caching
+student_tag = Table(
+    "student_tag", Base.metadata,
+    Column("student_id", Integer, ForeignKey("student.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id",     Integer, ForeignKey("tag.id",     ondelete="CASCADE"), primary_key=True),
+)
+
+
 # a role groups a set of permissions, every user has exactly one role
 class Role(Base):
     __tablename__ = "role"
@@ -106,6 +116,18 @@ class Student(Base):
     )
 
     homework = relationship("Homework", back_populates="students")
+    tags     = relationship("Tag", secondary=student_tag, back_populates="students")
+
+
+# assignment 5 gold, lookup table of short labels describing a submission
+# such as "olimpic", "restantier", "bursier", "lider_clasă"
+class Tag(Base):
+    __tablename__ = "tag"
+
+    id   = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=False, unique=True)
+
+    students = relationship("Student", secondary=student_tag, back_populates="tags")
 
 
 # 1 to many with homework, the new entity i added for the assignment
@@ -122,16 +144,62 @@ class Comment(Base):
 
 
 # user table, every user has a role which carries the permission set
+# security_question + security_answer_hash power factor #3 of the login flow
+# and the password recovery question
 class User(Base):
     __tablename__ = "user"
 
-    id       = Column(Integer, primary_key=True, autoincrement=True)
-    email    = Column(String(150), nullable=False, unique=True)
-    password = Column(String(150), nullable=False)
-    name     = Column(String(150), nullable=False)
-    role_id  = Column(Integer, ForeignKey("role.id", ondelete="RESTRICT"), nullable=False)
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    email                = Column(String(150), nullable=False, unique=True)
+    # bcrypt produces 60 char hashes, give it some headroom for future scheme bumps
+    password_hash        = Column(String(255), nullable=False)
+    name                 = Column(String(150), nullable=False)
+    role_id              = Column(Integer, ForeignKey("role.id", ondelete="RESTRICT"), nullable=False)
+    security_question    = Column(String(255), nullable=True)
+    security_answer_hash = Column(String(255), nullable=True)
 
     role = relationship("Role", back_populates="users")
+
+
+# silver, server side session record so logout actually invalidates a token
+# every issued JWT carries a jti that references one of these rows
+class Session(Base):
+    __tablename__ = "session"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    user_id        = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    jti            = Column(String(64), nullable=False, unique=True)
+    created_at     = Column(DateTime, nullable=False)
+    last_active_at = Column(DateTime, nullable=False)
+    revoked        = Column(Integer, nullable=False, default=0)  # 0/1 since sqlite has no bool
+
+
+# silver, 3 factor login wizard state machine
+# each successful factor unlocks the next, the row carries the email code
+# and the temp challenge id the client passes between steps
+class LoginChallenge(Base):
+    __tablename__ = "login_challenge"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    user_id         = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    challenge_id    = Column(String(64), nullable=False, unique=True)
+    email_code      = Column(String(10), nullable=False)
+    email_verified  = Column(Integer, nullable=False, default=0)
+    completed       = Column(Integer, nullable=False, default=0)
+    created_at      = Column(DateTime, nullable=False)
+    expires_at      = Column(DateTime, nullable=False)
+
+
+# silver, single use password reset tokens, expire 30 minutes from creation
+class PasswordReset(Base):
+    __tablename__ = "password_reset"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    user_id      = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    token        = Column(String(64), nullable=False, unique=True)
+    expires_at   = Column(DateTime, nullable=False)
+    used         = Column(Integer, nullable=False, default=0)
+    created_at   = Column(DateTime, nullable=False)
 
 
 # gold, audit log of every request that touches the api
@@ -152,6 +220,11 @@ class ActionLog(Base):
     ip_address  = Column(String(64),  nullable=True)
     details     = Column(String,      nullable=True)    # json blob for extras
     created_at  = Column(DateTime,    nullable=False)
+    # if the same user fires the exact same action twice in a row we bump the
+    # existing row instead of inserting a new one, count is the number of hits
+    # last_seen_at is the timestamp of the most recent hit
+    count        = Column(Integer,    nullable=False, default=1)
+    last_seen_at = Column(DateTime,   nullable=True)
 
     user = relationship("User",  foreign_keys=[user_id])
     role = relationship("Role",  foreign_keys=[role_id])
@@ -160,6 +233,7 @@ class ActionLog(Base):
         # the detector queries by user and time, this index makes that O(log n)
         Index("ix_action_log_user_time", "user_id", "created_at"),
         Index("ix_action_log_created_at", "created_at"),
+        Index("ix_action_log_user_last_seen", "user_id", "last_seen_at"),
     )
 
 

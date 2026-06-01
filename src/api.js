@@ -47,14 +47,32 @@ function enqueue(op) {
     pendingOps.value = pendingQueue.length
 }
 
-// reads the logged in user from sessionStorage so the audit middleware on the
-// server can attribute every request to who fired it
-function _userIdHeader() {
-    try {
-        const u = JSON.parse(sessionStorage.getItem('currentUser'))
-        return u && u.id ? { 'X-User-Id': String(u.id) } : {}
-    } catch {
-        return {}
+// reads the session token from sessionStorage and turns it into the
+// Authorization header. the audit middleware on the server decodes the same
+// token to figure out who is calling
+function _authHeader() {
+    const t = sessionStorage.getItem('authToken')
+    return t ? { 'Authorization': `Bearer ${t}` } : {}
+}
+
+// when the backend sits behind ngrok free, the first response would normally
+// be ngrok's "Visit Site" interstitial. sending this header on every request
+// bypasses that, regardless of which ngrok-like proxy is in the way
+const _NGROK_BYPASS = { 'ngrok-skip-browser-warning': 'true' }
+
+// after every response we look for X-Refresh-Token and stash it as the new
+// session token, that resets the inactivity timer. on a 401 we clear the
+// session entirely and bounce the user to /login
+function _handleSessionHeaders(res) {
+    const fresh = res.headers.get('X-Refresh-Token')
+    if (fresh) sessionStorage.setItem('authToken', fresh)
+    if (res.status === 401) {
+        const onLogin = location.pathname === '/' || location.pathname === '/login'
+        if (!onLogin) {
+            sessionStorage.removeItem('authToken')
+            sessionStorage.removeItem('currentUser')
+            location.replace('/login')
+        }
     }
 }
 
@@ -62,9 +80,10 @@ function _userIdHeader() {
 async function doFetch(method, path, body) {
     const res = await fetch(`${BASE}${path}`, {
         method,
-        headers: { 'Content-Type': 'application/json', ..._userIdHeader() },
+        headers: { 'Content-Type': 'application/json', ..._authHeader(), ..._NGROK_BYPASS },
         body: body ? JSON.stringify(body) : undefined,
     })
+    _handleSessionHeaders(res)
     if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
         const e = new Error(JSON.stringify(err))
@@ -400,10 +419,28 @@ export async function fetchAllHomeworks(filters = {}, pageSize = 100) {
     return all
 }
 
-// login endpoint
+// silver, the 3 factor login flow plus register, recovery, inbox
 export const auth = {
-    login: (email, password) =>
+    // factor 1, password. returns { challenge_id, next, message }
+    login:           (email, password) =>
         request('POST', '/auth/login', { email, password }),
+    // factor 2, email code. returns { challenge_id, security_question }
+    verifyEmail:     (challenge_id, code) =>
+        request('POST', '/auth/login/verify-email', { challenge_id, code }),
+    // factor 3, security question. returns the final { access_token, user }
+    verifyQuestion:  (challenge_id, answer) =>
+        request('POST', '/auth/login/verify-question', { challenge_id, answer }),
+
+    register: (name, email, password, security_question, security_answer) =>
+        request('POST', '/auth/register', {
+            name, email, password, security_question, security_answer,
+        }),
+    me:      () => request('GET',  '/auth/me'),
+    logout:  () => request('POST', '/auth/logout'),
+    inbox:   () => request('GET',  '/auth/inbox'),
+
+    forgot:  (email)              => request('POST', '/auth/forgot', { email }),
+    reset:   (token, new_password) => request('POST', '/auth/reset',  { token, new_password }),
 }
 
 // all the homework routes, used by pretty much every view
@@ -459,9 +496,10 @@ export const generatorApi = {
 async function gql(query, variables = {}) {
     const res = await fetch(`${BASE}/graphql`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ..._userIdHeader() },
+        headers: { 'Content-Type': 'application/json', ..._authHeader(), ..._NGROK_BYPASS },
         body: JSON.stringify({ query, variables }),
     })
+    _handleSessionHeaders(res)
     if (!res.ok) throw new Error(`GraphQL ${res.status}`)
     const json = await res.json()
     if (json.errors && json.errors.length) {
@@ -555,8 +593,9 @@ export function useOfflineStatus() {
 // rest helpers, plus a websocket factory that returns the raw ws so the panel
 // can also send messages (subscribe, post) not just receive
 async function _json(path, init = {}) {
-    init.headers = { ...(init.headers || {}), ..._userIdHeader() }
+    init.headers = { ...(init.headers || {}), ..._authHeader(), ..._NGROK_BYPASS }
     const r = await fetch(`${BASE}${path}`, init)
+    _handleSessionHeaders(r)
     if (!r.ok) {
         let detail = `HTTP ${r.status}`
         try { detail = (await r.json()).detail || detail } catch {}
@@ -565,33 +604,40 @@ async function _json(path, init = {}) {
     return r.json()
 }
 
+// chat helpers, all of them carry the bearer token via _json, so they no
+// longer need a user_id parameter
 export const chatApi = {
-    myRooms:    (userId) => _json(`/chat/rooms?user_id=${userId}`),
-    users:      (userId) => _json(`/chat/users?user_id=${userId}`),
-    openDm:     (userId, otherId) =>
-        _json(`/chat/dm?user_id=${userId}&other_id=${otherId}`, { method: 'POST' }),
-    createRoom: (userId, name, participants) =>
-        _json(`/chat/rooms?user_id=${userId}&name=${encodeURIComponent(name)}&participants=${participants}`, { method: 'POST' }),
-    history:    (roomId, userId) => _json(`/chat/rooms/${roomId}/messages?user_id=${userId}`),
+    myRooms:    ()                        => _json('/chat/rooms'),
+    users:      ()                        => _json('/chat/users'),
+    openDm:     (otherId)                 => _json(`/chat/dm?other_id=${otherId}`, { method: 'POST' }),
+    createRoom: (name, participants = '') =>
+        _json(`/chat/rooms?name=${encodeURIComponent(name)}&participants=${participants}`, { method: 'POST' }),
+    history:    (roomId)                  => _json(`/chat/rooms/${roomId}/messages`),
 }
 
-// chat ws is a separate endpoint from the live updates ws, so the panel and the
-// homeworks list dont fight over the same socket
 // ─── admin (gold) ────────────────────────────────────────────────────────────
-// every call passes user_id so the backend can verify the caller is admin
-// the audit middleware also logs these calls for the same reason
+// auth is the bearer token now, no more user_id query parameter
 export const adminApi = {
-    logs:        (userId, page = 1, pageSize = 50, onlyUserId = null) => {
+    logs: (page = 1, pageSize = 50, onlyUserId = null) => {
         const extra = onlyUserId !== null ? `&only_user_id=${onlyUserId}` : ''
-        return _json(`/admin/logs?user_id=${userId}&page=${page}&pageSize=${pageSize}${extra}`)
+        return _json(`/admin/logs?page=${page}&pageSize=${pageSize}${extra}`)
     },
-    observations: (userId, includeDismissed = false) =>
-        _json(`/admin/observations?user_id=${userId}&include_dismissed=${includeDismissed}`),
-    dismiss: (userId, flaggedUserId) =>
-        _json(`/admin/observations/${flaggedUserId}/dismiss?user_id=${userId}`, { method: 'POST' }),
+    observations: (includeDismissed = false) =>
+        _json(`/admin/observations?include_dismissed=${includeDismissed}`),
+    dismiss: (flaggedUserId) =>
+        _json(`/admin/observations/${flaggedUserId}/dismiss`, { method: 'POST' }),
+    runAi: () => _json('/admin/ai/run', { method: 'POST' }),
+}
+
+// assignment 5 gold, heavy compute stat + perf demo
+export const statsApi = {
+    byTag:    (mode = 'naive') => _json(`/stats/by-tag?mode=${mode}`),
+    perfDemo: ()                => _json('/stats/perf-demo'),
 }
 
 
+// chat ws is a separate endpoint, the hello message carries the bearer token
+// since browsers can't attach custom headers on the websocket handshake
 export function createChatWebSocket(onMessage) {
     const wsBase = BASE.replace(/^http/, 'ws')
     const ws = new WebSocket(`${wsBase}/chat/ws`)

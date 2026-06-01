@@ -7,7 +7,7 @@
 
 import { ref, computed, watch } from 'vue'
 import { chatApi, createChatWebSocket } from '../api.js'
-import { currentUser } from '../utils/auth.js'
+import { currentUser, authToken } from '../utils/auth.js'
 
 // ─── reactive state ──────────────────────────────────────────────────────────
 export const chatOpen        = ref(false)
@@ -33,11 +33,11 @@ function connectWs() {
     if (evt.type === 'message') handleIncoming(evt)
   })
   ws.addEventListener('open', () => {
-    if (!currentUser.value) return
+    if (!currentUser.value || !authToken.value) return
+    // server identifies us by decoding the bearer token, no plain user_id
     ws.send(JSON.stringify({
       type: 'hello',
-      user_id: currentUser.value.id,
-      user_name: currentUser.value.name,
+      token: authToken.value,
     }))
     // refresh sidebar after the hello so the rooms list is current
     loadSidebar()
@@ -115,14 +115,14 @@ export function markRead(roomId) {
 
 export async function loadSidebar() {
   if (!currentUser.value) return
-  rooms.value      = await chatApi.myRooms(currentUser.value.id)
-  otherUsers.value = await chatApi.users(currentUser.value.id)
+  rooms.value      = await chatApi.myRooms()
+  otherUsers.value = await chatApi.users()
 }
 
 export async function selectRoom(room) {
   activeRoom.value = room
   markRead(room.id)
-  messages.value = await chatApi.history(room.id, currentUser.value.id)
+  messages.value = await chatApi.history(room.id)
   // tell the server we want this rooms broadcasts, idempotent on the server side
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'subscribe', room_id: room.id }))
@@ -136,7 +136,7 @@ export function sendMessage(text) {
 }
 
 export async function openDmWith(other) {
-  const room = await chatApi.openDm(currentUser.value.id, other.id)
+  const room = await chatApi.openDm(other.id)
   await loadSidebar()
   // subscribe explicitly since the room is brand new
   if (ws && ws.readyState === 1) {
@@ -149,7 +149,7 @@ export async function createSpecialRoom(name) {
   name = (name || '').trim()
   if (!name) return
   const ids = otherUsers.value.map(u => u.id).join(',')
-  const room = await chatApi.createRoom(currentUser.value.id, name, ids)
+  const room = await chatApi.createRoom(name, ids)
   await loadSidebar()
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'subscribe', room_id: room.id }))

@@ -27,6 +27,19 @@ def _ids():
         db.close()
 
 
+def _tokens():
+    """Log in as admin and user via the 3 factor flow, return both access tokens."""
+    from _test_login import login_three_factor
+    return (
+        login_three_factor(client, "admin@proelev.ro", "Admin123"),
+        login_three_factor(client, "user@proelev.ro",  "Parola123"),
+    )
+
+
+def _h(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture(autouse=True)
 def _wipe_logs():
     """Each test starts with a clean log + observation table."""
@@ -69,7 +82,8 @@ class TestAuditLogging:
 
     def test_authenticated_request_carries_user_and_role(self):
         admin_id, _ = _ids()
-        client.get("/homeworks", headers={"X-User-Id": str(admin_id)})
+        admin_token, _ = _tokens()
+        client.get("/homeworks", headers=_h(admin_token))
         db = SessionLocal()
         try:
             row = db.query(ActionLog).order_by(ActionLog.id.desc()).first()
@@ -241,23 +255,26 @@ class TestObservationUpdates:
 
 class TestAdminEndpoints:
     def test_logs_endpoint_requires_admin(self):
-        admin_id, user_id = _ids()
+        admin_token, user_token = _tokens()
         # normal user gets 403
-        r = client.get(f"/admin/logs?user_id={user_id}")
-        assert r.status_code == 403
+        assert client.get("/admin/logs", headers=_h(user_token)).status_code == 403
         # admin gets 200 with a paginated payload
-        r = client.get(f"/admin/logs?user_id={admin_id}")
+        r = client.get("/admin/logs", headers=_h(admin_token))
         assert r.status_code == 200
         assert "items" in r.json() and "total" in r.json()
 
     def test_observations_endpoint_requires_admin(self):
-        admin_id, user_id = _ids()
-        assert client.get(f"/admin/observations?user_id={user_id}").status_code == 403
-        assert client.get(f"/admin/observations?user_id={admin_id}").status_code == 200
+        admin_token, user_token = _tokens()
+        assert client.get("/admin/observations", headers=_h(user_token)).status_code == 403
+        assert client.get("/admin/observations", headers=_h(admin_token)).status_code == 200
+
+    def test_observations_endpoint_unauthenticated(self):
+        # no token at all
+        assert client.get("/admin/observations").status_code == 401
 
     def test_dismiss_endpoint_marks_observation(self):
-        admin_id, user_id = _ids()
-        # seed an observation directly
+        _, user_id = _ids()
+        admin_token, _ = _tokens()
         db = SessionLocal()
         try:
             now = datetime.utcnow()
@@ -268,13 +285,11 @@ class TestAdminEndpoints:
             db.commit()
         finally:
             db.close()
-        r = client.post(f"/admin/observations/{user_id}/dismiss?user_id={admin_id}")
+        r = client.post(f"/admin/observations/{user_id}/dismiss", headers=_h(admin_token))
         assert r.status_code == 200
-        # row is now dismissed and disappears from default list
-        active = client.get(f"/admin/observations?user_id={admin_id}").json()
+        active = client.get("/admin/observations", headers=_h(admin_token)).json()
         assert all(o["user_id"] != user_id for o in active)
-        # but shows up with include_dismissed=true
-        all_rows = client.get(f"/admin/observations?user_id={admin_id}&include_dismissed=true").json()
+        all_rows = client.get("/admin/observations?include_dismissed=true", headers=_h(admin_token)).json()
         assert any(o["user_id"] == user_id and o["dismissed"] for o in all_rows)
 
 
@@ -282,12 +297,13 @@ class TestAdminEndpoints:
 
 class TestEndToEnd:
     def test_normal_user_trying_admin_routes_gets_observed(self):
-        admin_id, user_id = _ids()
+        _, user_id = _ids()
+        admin_token, user_token = _tokens()
         # the user pokes at admin only routes a few times
         for _ in range(2):
-            client.delete("/homeworks/999", headers={"X-User-Id": str(user_id)})
-        # now check the observation list
-        rows = client.get(f"/admin/observations?user_id={admin_id}").json()
+            client.delete("/homeworks/999", headers=_h(user_token))
+        # admin checks the observation list
+        rows = client.get("/admin/observations", headers=_h(admin_token)).json()
         assert any(o["user_id"] == user_id for o in rows)
         flagged = next(o for o in rows if o["user_id"] == user_id)
         assert flagged["score"] >= detector.OBSERVATION_THRESHOLD

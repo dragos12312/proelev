@@ -18,6 +18,7 @@ from starlette.responses import Response
 from database import SessionLocal
 from models import ActionLog, User
 import detector
+from auth import try_get_user_id
 
 
 # paths we never log because they would dwarf the real signal
@@ -84,13 +85,12 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return response
         # websockets dont go through this middleware so no need to filter them
 
-        # who did the action, header is set by the frontend after login
-        raw = request.headers.get("X-User-Id")
-        user_id: Optional[int] = None
+        # who did the action, decode the bearer token, anonymous if absent or bad
+        db_lookup = SessionLocal()
         try:
-            user_id = int(raw) if raw else None
-        except ValueError:
-            user_id = None
+            user_id: Optional[int] = try_get_user_id(request, db_lookup)
+        finally:
+            db_lookup.close()
 
         action, target_type, target_id = classify(request.method, path)
         ip = request.client.host if request.client else None
@@ -102,19 +102,46 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 u = db.get(User, user_id)
                 role_id = u.role_id if u else None
 
-            db.add(ActionLog(
-                user_id     = user_id,
-                role_id     = role_id,
-                action      = action,
-                target_type = target_type,
-                target_id   = target_id,
-                method      = request.method,
-                path        = path,
-                status_code = response.status_code,
-                ip_address  = ip,
-                details     = json.dumps({"qs": request.url.query}) if request.url.query else None,
-                created_at  = datetime.utcnow(),
-            ))
+            now = datetime.utcnow()
+            details = json.dumps({"qs": request.url.query}) if request.url.query else None
+
+            # if the same user has ever fired this exact action with this exact
+            # outcome before, bump that row instead of inserting a new one
+            # this also collapses interleaved sequences like the admin panel
+            # polling /admin/logs and /admin/observations every five seconds,
+            # which alternate A B A B and would otherwise stack up forever
+            existing = (
+                db.query(ActionLog)
+                .filter(
+                    ActionLog.user_id     == user_id,
+                    ActionLog.action      == action,
+                    ActionLog.method      == request.method,
+                    ActionLog.path        == path,
+                    ActionLog.status_code == response.status_code,
+                    ActionLog.target_id   == target_id,
+                )
+                .order_by(ActionLog.id.desc())
+                .first()
+            )
+            if existing:
+                existing.count        = (existing.count or 1) + 1
+                existing.last_seen_at = now
+            else:
+                db.add(ActionLog(
+                    user_id      = user_id,
+                    role_id      = role_id,
+                    action       = action,
+                    target_type  = target_type,
+                    target_id    = target_id,
+                    method       = request.method,
+                    path         = path,
+                    status_code  = response.status_code,
+                    ip_address   = ip,
+                    details      = details,
+                    created_at   = now,
+                    count        = 1,
+                    last_seen_at = now,
+                ))
             db.commit()
 
             # run the detector for the user that just acted

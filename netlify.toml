@@ -1,0 +1,22 @@
+# Netlify config. Optional - lets Netlify build the frontend directly from
+# your GitHub repo so you don't have to drag-drop dist on every change. If you
+# only ever use https://app.netlify.com/drop you can ignore this file.
+
+[build]
+  command   = "npm run build"
+  publish   = "dist"
+
+[build.environment]
+  # vite 7 requires node 20+
+  NODE_VERSION = "20.19.0"
+  NPM_VERSION  = "10"
+  # set VITE_API_URL on the Netlify dashboard under Site settings -> Build &
+  # deploy -> Environment, point it at your Render backend URL
+  # VITE_API_URL = "https://proelev-backend.onrender.com"
+
+# vue router uses html5 history mode, so any subpath has to fall back to
+# index.html otherwise refresh on /homeworks would 404
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

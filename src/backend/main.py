@@ -6,14 +6,19 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 
-from routers import homeworks, students, auth, generator, comments, chat, admin
+from routers import homeworks, students, auth, generator, comments, chat, admin, heavy_stats
 from graphql_schema import schema as gql_schema
 from database import SessionLocal
 from seed import seed_lookups
 from audit_middleware import AuditMiddleware
+from refresh_middleware import RefreshTokenMiddleware
+from defense_middleware import DefenseMiddleware
+import ai_detector
 
 
 # startup hook seeds the lookup tables and the default admin if the db is empty
+# also launches the assignment 5 ai detector thread which scores user behavior
+# in the background every 30 seconds
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = SessionLocal()
@@ -21,7 +26,11 @@ async def lifespan(app: FastAPI):
         seed_lookups(db)
     finally:
         db.close()
-    yield
+    ai_detector.start_scheduler()
+    try:
+        yield
+    finally:
+        ai_detector.stop_scheduler()
 
 
 app = FastAPI(
@@ -45,6 +54,14 @@ app.add_middleware(
 # added AFTER cors so the cors preflights still respond first
 app.add_middleware(AuditMiddleware)
 
+# assignment 4 gold, defense middleware sits INSIDE audit so refused requests
+# (429, 413) still show up in the action_log and admin can see the attack
+app.add_middleware(DefenseMiddleware)
+
+# assignment 4, sliding token refresh, runs after audit so every successful
+# request bumps the inactivity timer on the caller's session token
+app.add_middleware(RefreshTokenMiddleware)
+
 app.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
 app.include_router(homeworks.router,  prefix="/homeworks",  tags=["Homeworks"])
 app.include_router(students.router,   prefix="/homeworks",  tags=["Students"])
@@ -52,6 +69,7 @@ app.include_router(comments.router,   prefix="/homeworks",  tags=["Comments"])
 app.include_router(generator.router,  prefix="/generator",  tags=["Generator"])
 app.include_router(chat.router,       prefix="/chat",       tags=["Chat"])
 app.include_router(admin.router,      prefix="/admin",      tags=["Admin"])
+app.include_router(heavy_stats.router, prefix="/stats",      tags=["HeavyStats"])
 
 # graphql lives under /graphql, same store as the rest endpoints
 graphql_app = GraphQLRouter(gql_schema)

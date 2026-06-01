@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from models import ActionLog, Observation, User, ROLE_ADMIN
+from models import ActionLog, Observation, User, Session as UserSession, ROLE_ADMIN
 
 
 # tunables, change these and the tests still pass since the tests trigger them on purpose
@@ -34,14 +34,31 @@ PRIVILEGE_ESCAPE_POINTS = 10  # any single attempt by a non admin gets the full 
 # total score >= this puts the user on the observation list
 OBSERVATION_THRESHOLD  = 10
 
+# gold defense, when the score climbs this high we kill every session for the
+# user so the attack stops cold. they can still log in again but the immediate
+# burst is cut off.
+BLOCK_THRESHOLD        = 25
+
 
 def _recent_logs(db: Session, user_id: int) -> list[ActionLog]:
+    """Rows for the user whose most recent hit lands inside the rolling window.
+    We use last_seen_at because rows can be coalesced, a row with last_seen_at
+    inside the window represents activity that ended inside the window.
+    Rows that have never been bumped fall back to created_at."""
     cutoff = datetime.utcnow() - timedelta(seconds=WINDOW_SECONDS)
     return (
         db.query(ActionLog)
-        .filter(ActionLog.user_id == user_id, ActionLog.created_at >= cutoff)
+        .filter(
+            ActionLog.user_id == user_id,
+            (ActionLog.last_seen_at >= cutoff) | (ActionLog.created_at >= cutoff),
+        )
         .all()
     )
+
+
+def _count(rows) -> int:
+    """Sum the .count field across rows, treating None as 1 for old data."""
+    return sum((r.count or 1) for r in rows)
 
 
 def _is_admin_only_path(action: str) -> bool:
@@ -70,28 +87,32 @@ def evaluate(db: Session, user_id: int) -> tuple[int, list[str]]:
     score   = 0
     reasons: list[str] = []
 
-    # request flood
-    if len(logs) > RATE_LIMIT:
+    # request flood, sum across coalesced rows so 1 row x count=1000 still counts
+    total_hits = _count(logs)
+    if total_hits > RATE_LIMIT:
         score += RATE_POINTS
-        reasons.append(f"request flood: {len(logs)} requests in {WINDOW_SECONDS}s")
+        reasons.append(f"request flood: {total_hits} requests in {WINDOW_SECONDS}s")
 
     # mass delete
     deletes = [l for l in logs if l.method == "DELETE" and 200 <= l.status_code < 300]
-    if len(deletes) > DELETE_LIMIT:
+    n_del = _count(deletes)
+    if n_del > DELETE_LIMIT:
         score += DELETE_POINTS
-        reasons.append(f"mass delete: {len(deletes)} successful deletes in {WINDOW_SECONDS}s")
+        reasons.append(f"mass delete: {n_del} successful deletes in {WINDOW_SECONDS}s")
 
     # repeated forbidden hits, common when probing for admin endpoints
     forbidden = [l for l in logs if l.status_code == 403]
-    if len(forbidden) > FORBIDDEN_LIMIT:
+    n_403 = _count(forbidden)
+    if n_403 > FORBIDDEN_LIMIT:
         score += FORBIDDEN_POINTS
-        reasons.append(f"forbidden spam: {len(forbidden)} 403s in {WINDOW_SECONDS}s")
+        reasons.append(f"forbidden spam: {n_403} 403s in {WINDOW_SECONDS}s")
 
     # 422 spam, common when fuzzing inputs
     validation = [l for l in logs if l.status_code == 422]
-    if len(validation) > VALIDATION_LIMIT:
+    n_422 = _count(validation)
+    if n_422 > VALIDATION_LIMIT:
         score += VALIDATION_POINTS
-        reasons.append(f"validation spam: {len(validation)} 422s in {WINDOW_SECONDS}s")
+        reasons.append(f"validation spam: {n_422} 422s in {WINDOW_SECONDS}s")
 
     # privilege escalation, even one attempt is loud
     user = db.get(User, user_id)
@@ -131,5 +152,12 @@ def update_observation(db: Session, user_id: int) -> Optional[Observation]:
             first_flagged_at=now, last_flagged_at=now, dismissed=0,
         )
         db.add(obs)
+
+    # gold defense, if the score crossed the block line, revoke every session
+    # for this user so any in-flight token stops working immediately
+    if obs.score >= BLOCK_THRESHOLD:
+        db.query(UserSession).filter_by(user_id=user_id, revoked=0).update(
+            {"revoked": 1}, synchronize_session=False,
+        )
     db.commit()
     return obs

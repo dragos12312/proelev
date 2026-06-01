@@ -71,7 +71,12 @@ class TestSeed:
         try:
             admin = db.query(User).filter_by(email="admin@proelev.ro").first()
             assert admin is not None
-            assert admin.password == "Admin123"
+            # password is bcrypt-hashed now, never the plain string
+            assert admin.password_hash and admin.password_hash != "Admin123"
+            assert admin.password_hash.startswith("$2")  # bcrypt prefix
+            # round-trip verify
+            from auth import verify_password
+            assert verify_password("Admin123", admin.password_hash)
         finally:
             db.close()
 

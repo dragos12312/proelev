@@ -26,6 +26,118 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     message: str
     user: dict
+    access_token: str
+    token_type: str = "bearer"
+
+
+# silver, factor 1 returns this to ask the client to move to factor 2
+class LoginFactorOneResponse(BaseModel):
+    message: str
+    challenge_id: str
+    next: str = "email_code"
+
+
+# silver, factor 2 returns this after the email code matches, asking for the
+# security question as the third factor
+class LoginFactorTwoResponse(BaseModel):
+    message: str
+    challenge_id: str
+    security_question: str
+    next: str = "security_question"
+
+
+class VerifyEmailRequest(BaseModel):
+    challenge_id: str
+    code: str
+
+
+class VerifyQuestionRequest(BaseModel):
+    challenge_id: str
+    answer: str
+
+
+class ForgotRequest(BaseModel):
+    email: str
+
+
+class ResetRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not v or len(v) < 6:
+            raise ValueError("Parola trebuie să aibă cel puțin 6 caractere")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Parola trebuie să conțină cel puțin o cifră")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Parola trebuie să conțină cel puțin o literă")
+        return v
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    # silver, 3rd factor for login and recovery
+    security_question: str
+    security_answer:   str
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Numele nu poate fi gol")
+        if len(v) > 150:
+            raise ValueError("Numele nu poate depăși 150 de caractere")
+        return v
+
+    @field_validator("security_question")
+    @classmethod
+    def question_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) < 5:
+            raise ValueError("Întrebarea de securitate trebuie să aibă cel puțin 5 caractere")
+        if len(v) > 255:
+            raise ValueError("Întrebarea de securitate nu poate depăși 255 de caractere")
+        return v
+
+    @field_validator("security_answer")
+    @classmethod
+    def answer_ok(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) < 2:
+            raise ValueError("Răspunsul trebuie să aibă cel puțin 2 caractere")
+        if len(v) > 255:
+            raise ValueError("Răspunsul nu poate depăși 255 de caractere")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def email_format(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if not v:
+            raise ValueError("Email-ul nu poate fi gol")
+        # basic shape check, the real validation is uniqueness at the db level
+        if "@" not in v or "." not in v.split("@", 1)[-1]:
+            raise ValueError("Email invalid")
+        if len(v) > 150:
+            raise ValueError("Email-ul nu poate depăși 150 de caractere")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        # mild rules so the demo isnt trivial but still student friendly
+        if not v or len(v) < 6:
+            raise ValueError("Parola trebuie să aibă cel puțin 6 caractere")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Parola trebuie să conțină cel puțin o cifră")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Parola trebuie să conțină cel puțin o literă")
+        return v
 
 
 # Homework

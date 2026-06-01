@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
-import { adminApi } from '../api.js'
+import { adminApi, statsApi } from '../api.js'
 import { currentUser, isAdmin } from '../utils/auth.js'
 
 const router = useRouter()
@@ -29,10 +29,9 @@ let refreshTimer = null
 async function loadAll() {
   if (!isAdmin()) return
   try {
-    const uid = currentUser.value.id
-    observations.value = await adminApi.observations(uid, includeDismissed.value)
+    observations.value = await adminApi.observations(includeDismissed.value)
     const filt = filterUserId.value ? parseInt(filterUserId.value) : null
-    const res  = await adminApi.logs(uid, 1, 100, filt)
+    const res  = await adminApi.logs(1, 100, filt)
     logs.value = res.items
     error.value = ''
   } catch (e) {
@@ -42,11 +41,46 @@ async function loadAll() {
 
 async function dismiss(uid) {
   try {
-    await adminApi.dismiss(currentUser.value.id, uid)
+    await adminApi.dismiss(uid)
     await loadAll()
   } catch (e) {
     error.value = e.message || 'eroare'
   }
+}
+
+
+// ── perf demo & ai run-now ───────────────────────────────────────────────
+const perf       = ref(null)
+const perfBusy   = ref(false)
+const aiBusy     = ref(false)
+const aiResult   = ref(null)
+
+async function runPerf() {
+  perfBusy.value = true
+  try {
+    perf.value = await statsApi.perfDemo()
+  } catch (e) {
+    error.value = e.message || 'eroare la perf demo'
+  } finally {
+    perfBusy.value = false
+  }
+}
+
+async function runAi() {
+  aiBusy.value = true
+  try {
+    aiResult.value = await adminApi.runAi()
+    await loadAll()  // pull the freshly written observations
+  } catch (e) {
+    error.value = e.message || 'eroare la ai'
+  } finally {
+    aiBusy.value = false
+  }
+}
+
+function perfBar(ms, max) {
+  if (!max) return '0%'
+  return `${Math.min(100, (ms / max) * 100)}%`
 }
 
 function statusClass(s) {
@@ -54,6 +88,16 @@ function statusClass(s) {
   if (s >= 400) return 'st-client'
   if (s >= 300) return 'st-redir'
   return 'st-ok'
+}
+
+// format an iso utc string in the browser local timezone, e.g. 2026-05-04 10:58:23
+function formatLocal(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} `
+       + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 // auto refresh, the lab teacher should see the list change while we generate suspicious traffic
@@ -79,6 +123,68 @@ onUnmounted(() => {
         </div>
 
         <div v-if="error" class="api-error">{{ error }}</div>
+
+        <!-- assignment 5 gold, perf demo of the heavy m2m stat -->
+        <section class="card">
+          <header>
+            <h3>Performanță statistică M2M (/stats/by-tag)</h3>
+            <button class="btn-action" :disabled="perfBusy" @click="runPerf">
+              {{ perfBusy ? 'Rulez...' : 'Rulează demo' }}
+            </button>
+          </header>
+          <div v-if="perf" class="perf-body">
+            <div class="rows">
+              <span>tags: <b>{{ perf.rows.tags }}</b></span>
+              <span>students: <b>{{ perf.rows.students }}</b></span>
+              <span>tag links: <b>{{ perf.rows.tag_links }}</b></span>
+            </div>
+            <div class="perf-grid">
+              <template v-for="key in ['naive', 'indexed', 'cache_miss', 'cache_hit']" :key="key">
+                <div class="perf-label">{{ key }}</div>
+                <div class="perf-track">
+                  <div class="perf-fill" :class="{ slow: key === 'naive' }"
+                       :style="{ width: perfBar(perf.ms[key], perf.ms.naive) }"></div>
+                </div>
+                <div class="perf-value">{{ perf.ms[key] }} ms</div>
+              </template>
+            </div>
+            <p class="perf-note">
+              Speed-up indexed vs naive:
+              <b>{{ perf.ms.naive && perf.ms.indexed ? (perf.ms.naive / perf.ms.indexed).toFixed(1) : '-' }}×</b>
+              ·
+              cache hit vs naive:
+              <b>{{ perf.ms.naive && perf.ms.cache_hit ? (perf.ms.naive / Math.max(perf.ms.cache_hit, 0.01)).toFixed(0) : '-' }}×</b>
+            </p>
+          </div>
+          <p v-else class="empty">
+            Apasă „Rulează demo" pentru a măsura cele trei moduri.
+            Rulează scripts/seed_heavy.py întâi, altfel timpii nu vor fi vizibili.
+          </p>
+        </section>
+
+        <!-- assignment 5 gold, ai run-now button + last cycle result -->
+        <section class="card">
+          <header>
+            <h3>Detector AI (Isolation Forest)</h3>
+            <button class="btn-action" :disabled="aiBusy" @click="runAi">
+              {{ aiBusy ? 'Rulez...' : 'Rulează detector AI' }}
+            </button>
+          </header>
+          <div v-if="aiResult">
+            <p>Ciclu: {{ aiResult.fitted ? 'fitat' : 'nefitat' }}, useri: <b>{{ aiResult.users }}</b></p>
+            <p v-if="aiResult.flagged && aiResult.flagged.length">
+              Flagged: <b>{{ aiResult.flagged.length }}</b> · scoruri:
+              <code v-for="f in aiResult.flagged" :key="f.user_id" class="score-chip">
+                #{{ f.user_id }}: {{ f.score.toFixed(2) }}
+              </code>
+            </p>
+            <p v-else class="empty">Niciun user marcat ca anomal.</p>
+          </div>
+          <p v-else class="empty">
+            Detectorul rulează automat la fiecare 30s în fundal. Apasă „Rulează detector AI"
+            pentru a forța un ciclu imediat.
+          </p>
+        </section>
 
         <!-- observation list -->
         <section class="card">
@@ -113,8 +219,8 @@ onUnmounted(() => {
                 <td><span class="role-pill" :class="o.user_role">{{ o.user_role }}</span></td>
                 <td class="score">{{ o.score }}</td>
                 <td class="reason">{{ o.reason }}</td>
-                <td>{{ o.first_flagged_at }}</td>
-                <td>{{ o.last_flagged_at }}</td>
+                <td>{{ formatLocal(o.first_flagged_at) }}</td>
+                <td>{{ formatLocal(o.last_flagged_at) }}</td>
                 <td>
                   <button v-if="!o.dismissed" class="btn-dismiss" @click="dismiss(o.user_id)">Dismiss</button>
                   <span v-else class="muted">dismis</span>
@@ -141,6 +247,8 @@ onUnmounted(() => {
               <thead>
                 <tr>
                   <th>WHEN</th>
+                  <th>LAST</th>
+                  <th>COUNT</th>
                   <th>USER</th>
                   <th>METHOD</th>
                   <th>ACTION</th>
@@ -150,7 +258,9 @@ onUnmounted(() => {
               </thead>
               <tbody>
                 <tr v-for="l in logs" :key="l.id">
-                  <td class="mono">{{ l.created_at.replace('T', ' ').slice(0, 19) }}</td>
+                  <td class="mono">{{ formatLocal(l.created_at) }}</td>
+                  <td class="mono">{{ formatLocal(l.last_seen_at) }}</td>
+                  <td><span class="count" :class="{ many: l.count > 1 }">×{{ l.count }}</span></td>
                   <td>
                     <div v-if="l.user_id">
                       {{ l.user_name || 'necunoscut' }} <span class="uid">#{{ l.user_id }}</span>
@@ -164,7 +274,7 @@ onUnmounted(() => {
                   <td><span class="status" :class="statusClass(l.status)">{{ l.status }}</span></td>
                 </tr>
                 <tr v-if="logs.length === 0">
-                  <td colspan="6" class="empty">Niciun eveniment.</td>
+                  <td colspan="8" class="empty">Niciun eveniment.</td>
                 </tr>
               </tbody>
             </table>
@@ -255,10 +365,53 @@ tr.dismissed { opacity: 0.5; }
   display: inline-block; padding: 2px 6px; border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
 }
+
+/* count column shows ×1 normally and a yellow chip when the row has been bumped */
+.count {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700;
+  background: #f0f0f0; color: #777;
+}
+.count.many { background: #fff0c0; color: #8a6020; }
 .st-ok     { background: #d0f0d0; color: #2a6a2a; }
 .st-redir  { background: #fff0d0; color: #8a6020; }
 .st-client { background: #ffe5e5; color: #cc0000; }
 .st-server { background: #cc0000; color: white; }
 
 .empty { color: #999; text-align: center; padding: 20px; font-style: italic; }
+
+.btn-action {
+  padding: 6px 14px; background: #185FA5; color: white; border: none;
+  border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700;
+}
+.btn-action:hover { background: #134d87; }
+.btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.perf-body { padding: 4px 0; }
+.rows { display: flex; gap: 16px; font-size: 12px; color: #555; margin-bottom: 10px; }
+.perf-grid {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+}
+.perf-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.perf-track {
+  height: 16px; background: #f0f0f0; border-radius: 8px; overflow: hidden;
+}
+.perf-fill {
+  height: 100%; background: #2a9d2a; transition: width 0.3s;
+}
+.perf-fill.slow { background: #cc0000; }
+.perf-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: #333; min-width: 70px; text-align: right;
+}
+.perf-note { font-size: 12px; color: #444; margin-top: 8px; }
+
+.score-chip {
+  display: inline-block; margin: 2px 4px 0 0; padding: 1px 6px;
+  background: #ffe5e5; color: #a00000; border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+}
 </style>

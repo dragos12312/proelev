@@ -80,7 +80,7 @@ class TestRolesPermissionsDb:
         from sqlalchemy.exc import IntegrityError
         db = SessionLocal()
         try:
-            db.add(User(email="x@y.com", password="p", name="x", role_id=9999))
+            db.add(User(email="x@y.com", password_hash="x", name="x", role_id=9999))
             with pytest.raises(IntegrityError):
                 db.commit()
             db.rollback()
@@ -90,9 +90,23 @@ class TestRolesPermissionsDb:
 
 # ─── login returns role + permissions ────────────────────────────────────────
 
+def _full_login_response(email, password):
+    """Walk all 3 factors, return the body of the final verify-question call
+    so the caller can inspect both the user object and the access_token."""
+    r1 = client.post("/auth/login", json={"email": email, "password": password})
+    challenge_id = r1.json()["challenge_id"]
+    inbox = client.get(f"/auth/inbox/last?to={email}")
+    code = inbox.json()["code"]
+    client.post("/auth/login/verify-email", json={"challenge_id": challenge_id, "code": code})
+    r3 = client.post("/auth/login/verify-question", json={
+        "challenge_id": challenge_id, "answer": "proelev",
+    })
+    return r3
+
+
 class TestLoginResponse:
     def test_admin_login_returns_admin_role(self):
-        r = client.post("/auth/login", json={"email": "admin@proelev.ro", "password": "Admin123"})
+        r = _full_login_response("admin@proelev.ro", "Admin123")
         assert r.status_code == 200
         u = r.json()["user"]
         assert u["role"] == ROLE_ADMIN
@@ -100,21 +114,20 @@ class TestLoginResponse:
         assert set(u["permissions"]) == set(PERMISSIONS)
 
     def test_normal_user_login_returns_restricted_permissions(self):
-        r = client.post("/auth/login", json={"email": "user@proelev.ro", "password": "Parola123"})
+        r = _full_login_response("user@proelev.ro", "Parola123")
         assert r.status_code == 200
         u = r.json()["user"]
         assert u["role"] == ROLE_USER
         perms = set(u["permissions"])
-        # admin only stuff is missing
         assert "homework_delete" not in perms
         assert "homework_create" not in perms
-        # but reads and chat are allowed
         assert "homework_read" in perms
         assert "chat_send"     in perms
 
     def test_login_does_not_leak_password(self):
-        r = client.post("/auth/login", json={"email": "admin@proelev.ro", "password": "Admin123"})
-        assert "password" not in r.json()["user"]
+        r = _full_login_response("admin@proelev.ro", "Admin123")
+        assert "password"      not in r.json()["user"]
+        assert "password_hash" not in r.json()["user"]
 
 
 # ─── chat REST ───────────────────────────────────────────────────────────────
@@ -130,17 +143,31 @@ def _ids():
         db.close()
 
 
+def _tokens():
+    """Log in as admin and user via the 3 factor flow, return both access tokens."""
+    from _test_login import login_three_factor
+    return (
+        login_three_factor(client, "admin@proelev.ro", "Admin123"),
+        login_three_factor(client, "user@proelev.ro",  "Parola123"),
+    )
+
+
+def _h(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestChatRest:
     def test_global_room_visible_to_everyone(self):
-        admin_id, user_id = _ids()
-        r = client.get(f"/chat/rooms?user_id={user_id}")
+        _, user_token = _tokens()
+        r = client.get("/chat/rooms", headers=_h(user_token))
         assert r.status_code == 200
         rooms = r.json()
         assert any(room["type"] == "global" for room in rooms)
 
     def test_list_users_excludes_self(self):
         admin_id, user_id = _ids()
-        r = client.get(f"/chat/users?user_id={admin_id}")
+        admin_token, _ = _tokens()
+        r = client.get("/chat/users", headers=_h(admin_token))
         assert r.status_code == 200
         ids = [u["id"] for u in r.json()]
         assert admin_id not in ids
@@ -148,7 +175,8 @@ class TestChatRest:
 
     def test_open_dm_creates_room(self):
         admin_id, user_id = _ids()
-        r = client.post(f"/chat/dm?user_id={admin_id}&other_id={user_id}")
+        admin_token, _ = _tokens()
+        r = client.post(f"/chat/dm?other_id={user_id}", headers=_h(admin_token))
         assert r.status_code == 200
         room = r.json()
         assert room["type"] == "dm"
@@ -156,54 +184,58 @@ class TestChatRest:
 
     def test_open_dm_is_idempotent(self):
         admin_id, user_id = _ids()
-        a = client.post(f"/chat/dm?user_id={admin_id}&other_id={user_id}").json()
-        b = client.post(f"/chat/dm?user_id={user_id}&other_id={admin_id}").json()
+        admin_token, user_token = _tokens()
+        a = client.post(f"/chat/dm?other_id={user_id}",  headers=_h(admin_token)).json()
+        b = client.post(f"/chat/dm?other_id={admin_id}", headers=_h(user_token)).json()
         assert a["id"] == b["id"]
 
     def test_open_dm_with_self_rejected(self):
         admin_id, _ = _ids()
-        r = client.post(f"/chat/dm?user_id={admin_id}&other_id={admin_id}")
+        admin_token, _ = _tokens()
+        r = client.post(f"/chat/dm?other_id={admin_id}", headers=_h(admin_token))
         assert r.status_code == 400
 
     def test_create_room_admin_only(self):
-        admin_id, user_id = _ids()
+        admin_token, user_token = _tokens()
         # normal user gets 403
-        r = client.post(f"/chat/rooms?user_id={user_id}&name=X")
+        r = client.post("/chat/rooms?name=X", headers=_h(user_token))
         assert r.status_code == 403
         # admin succeeds
-        r = client.post(f"/chat/rooms?user_id={admin_id}&name=Profesori")
+        r = client.post("/chat/rooms?name=Profesori", headers=_h(admin_token))
         assert r.status_code == 200
         room = r.json()
         assert room["type"] == "room"
         assert room["name"] == "Profesori"
 
     def test_history_blocks_outsiders(self):
-        admin_id, user_id = _ids()
-        # admin makes a special room with only themselves
-        r = client.post(f"/chat/rooms?user_id={admin_id}&name=Privat")
+        admin_token, user_token = _tokens()
+        r = client.post("/chat/rooms?name=Privat", headers=_h(admin_token))
         room_id = r.json()["id"]
-        # the normal user is not a participant, gets 403
-        r2 = client.get(f"/chat/rooms/{room_id}/messages?user_id={user_id}")
+        # the normal user is not a participant
+        r2 = client.get(f"/chat/rooms/{room_id}/messages", headers=_h(user_token))
         assert r2.status_code == 403
+
+    def test_unauthenticated_request_rejected(self):
+        r = client.get("/chat/rooms")
+        assert r.status_code == 401
 
 
 # ─── chat websocket two client roundtrip ─────────────────────────────────────
 
 class TestChatWebSocket:
     def test_two_clients_see_each_others_messages(self):
-        admin_id, user_id = _ids()
+        admin_id, _ = _ids()
+        admin_token, user_token = _tokens()
         with client.websocket_connect("/chat/ws") as ws_admin, \
              client.websocket_connect("/chat/ws") as ws_user:
-            # both identify themselves, server auto subscribes them to global
-            ws_admin.send_json({"type": "hello", "user_id": admin_id, "user_name": "Admin"})
+            # identify with the bearer token, server auto subscribes to global
+            ws_admin.send_json({"type": "hello", "token": admin_token})
             assert ws_admin.receive_json()["type"] == "ready"
-            ws_user.send_json({"type": "hello", "user_id": user_id, "user_name": "User"})
+            ws_user.send_json({"type": "hello", "token": user_token})
             assert ws_user.receive_json()["type"] == "ready"
 
-            # find the global room id
             global_id = chat_store.ensure_global_room()["id"]
 
-            # admin posts to global, user must receive it
             ws_admin.send_json({"type": "message", "room_id": global_id, "text": "salut"})
             seen_admin = ws_admin.receive_json()
             seen_user  = ws_user.receive_json()
@@ -213,27 +245,29 @@ class TestChatWebSocket:
             assert seen_user["message"]["author_id"] == admin_id
 
     def test_message_persisted_to_tinydb(self):
-        admin_id, _ = _ids()
+        admin_token, _ = _tokens()
         with client.websocket_connect("/chat/ws") as ws:
-            ws.send_json({"type": "hello", "user_id": admin_id, "user_name": "Admin"})
+            ws.send_json({"type": "hello", "token": admin_token})
             assert ws.receive_json()["type"] == "ready"
             global_id = chat_store.ensure_global_room()["id"]
             ws.send_json({"type": "message", "room_id": global_id, "text": "persistent"})
-            ws.receive_json()  # the broadcast back
-        # after the socket closes, the message should still be in tinydb
+            ws.receive_json()
         msgs = chat_store.list_messages(global_id)
         assert any(m["text"] == "persistent" for m in msgs)
 
     def test_subscribe_to_unauthorised_room_silently_ignored(self):
-        admin_id, user_id = _ids()
-        # admin creates a private room without the user
+        admin_id, _ = _ids()
+        _, user_token = _tokens()
         priv = chat_store.create_special_room("X", [admin_id])
         with client.websocket_connect("/chat/ws") as ws:
-            ws.send_json({"type": "hello", "user_id": user_id, "user_name": "User"})
+            ws.send_json({"type": "hello", "token": user_token})
             assert ws.receive_json()["type"] == "ready"
             ws.send_json({"type": "subscribe", "room_id": priv["id"]})
-            # server doesnt reply, the receive would block, so just send
-            # something else and verify we never got a subscribed event
             ws.send_json({"type": "message", "room_id": priv["id"], "text": "shouldnt deliver"})
-        # nothing got into the private room
         assert chat_store.list_messages(priv["id"]) == []
+
+    def test_ws_rejects_bad_token(self):
+        with client.websocket_connect("/chat/ws") as ws:
+            ws.send_json({"type": "hello", "token": "not-a-real-token"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"

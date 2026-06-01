@@ -1,0 +1,28 @@
+# Render blueprint, lets you deploy the whole backend with one click from the
+# Render dashboard. Reads this file from the root of the connected GitHub repo.
+#
+# Free tier notes:
+#   - the instance spins down after ~15 minutes of no traffic, the first
+#     request after sleep takes ~30-60 seconds to wake up. fine for grading.
+#   - the filesystem is ephemeral. proelev.db, chat.json and email.json reset
+#     on every cold start. seed_lookups re-runs on startup so admin@proelev.ro
+#     and user@proelev.ro are always there.
+#   - SECRET_KEY is auto-generated once on first deploy and persisted across
+#     restarts via Render's env var store.
+services:
+  - type: web
+    name: proelev-backend
+    runtime: python
+    rootDir: src/backend
+    plan: free
+    region: frankfurt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python -m alembic upgrade head && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_MINUTES
+        value: "30"
