@@ -107,3 +107,65 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/", tags=["Health"])
 def root():
     return {"status": "ProElev API is running"}
+
+
+# ─── temporary deploy-debug endpoints ───────────────────────────────────────
+# safe to delete once the public deploy is verified, no auth on purpose so we
+# can hit them from a phone without going through the 3 factor login
+
+from models import User as _User  # local alias so the import lives near use
+from auth import verify_password as _verify
+
+
+@app.get("/debug/users", tags=["Debug"])
+def debug_users():
+    """Lists every user row in the db. Used to confirm the seeder ran."""
+    db = SessionLocal()
+    try:
+        return {
+            "count": db.query(_User).count(),
+            "users": [
+                {
+                    "id": u.id,
+                    "email": u.email,
+                    "name": u.name,
+                    "role": u.role.name if u.role else None,
+                    "has_password_hash": bool(u.password_hash),
+                    "password_hash_starts": (u.password_hash or "")[:7],
+                }
+                for u in db.query(_User).all()
+            ],
+        }
+    finally:
+        db.close()
+
+
+@app.post("/debug/reseed", tags=["Debug"])
+def debug_reseed():
+    """Force-run seed_lookups against the current db.
+    Returns what's in the user table afterwards."""
+    db = SessionLocal()
+    try:
+        seed_lookups(db)
+        return debug_users()
+    finally:
+        db.close()
+
+
+@app.get("/debug/verify", tags=["Debug"])
+def debug_verify(email: str, password: str):
+    """Take an email + password as query params and report whether the
+    bcrypt hash on disk matches. Lets us tell apart 'user not found' from
+    'password mismatch' without leaking the actual hash."""
+    db = SessionLocal()
+    try:
+        u = db.query(_User).filter_by(email=email.strip().lower()).first()
+        if not u:
+            return {"found": False}
+        return {
+            "found":             True,
+            "password_matches":  _verify(password, u.password_hash),
+            "hash_prefix":       (u.password_hash or "")[:7],
+        }
+    finally:
+        db.close()
