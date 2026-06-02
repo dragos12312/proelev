@@ -64,6 +64,29 @@ async function submitCode() {
   }
 }
 
+// auto fill the code by fetching the latest email for this address from the
+// public mock inbox endpoint, so the user doesnt have to navigate away and
+// lose the wizard state
+async function autofillCode() {
+  apiError.value = ''
+  errors.value = {}
+  try {
+    const base = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    const res = await fetch(
+      `${base}/auth/inbox/last?to=${encodeURIComponent(email.value.trim())}`,
+      { headers: { 'ngrok-skip-browser-warning': 'true' } },
+    )
+    if (!res.ok) {
+      apiError.value = res.status === 404 ? 'Inbox-ul este gol încă, mai încearcă' : 'Eroare la inbox'
+      return
+    }
+    const msg = await res.json()
+    if (msg && msg.code) code.value = String(msg.code)
+  } catch (e) {
+    apiError.value = e.message || 'Eroare la inbox'
+  }
+}
+
 // step 3
 async function submitAnswer() {
   errors.value = {}
@@ -141,9 +164,11 @@ function resetWizard() {
         <template v-else-if="step === 'email_code'">
           <p class="hint">Ți-am trimis un cod de 6 cifre la <b>{{ email }}</b>.</p>
           <p class="hint subtle">
-            Demo: deschide
-            <span class="link" @click="router.push('/inbox')">Inbox-ul mock</span>
-            pentru a vedea codul.
+            Demo:
+            <span class="link" @click="autofillCode">completează codul automat</span>
+            sau deschide
+            <a class="link" href="/inbox" target="_blank" rel="noopener">Inbox-ul mock</a>
+            într-un tab nou.
           </p>
           <div class="field">
             <input v-model="code" type="text" inputmode="numeric" maxlength="6"
@@ -255,6 +280,7 @@ function resetWizard() {
 }
 .register-link .link, .hint .link {
   color: #185FA5; font-weight: 700; cursor: pointer; margin-left: 4px;
+  text-decoration: none;
 }
 .register-link .link:hover, .hint .link:hover { text-decoration: underline; }
 

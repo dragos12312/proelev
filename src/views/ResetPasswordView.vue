@@ -41,6 +41,27 @@ async function requestCode() {
 }
 
 
+async function autofillCode() {
+  apiError.value = ''
+  errors.value = {}
+  try {
+    const base = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    const res = await fetch(
+      `${base}/auth/inbox/last?to=${encodeURIComponent(email.value.trim())}`,
+      { headers: { 'ngrok-skip-browser-warning': 'true' } },
+    )
+    if (!res.ok) {
+      apiError.value = res.status === 404 ? 'Inbox-ul este gol încă, mai încearcă' : 'Eroare la inbox'
+      return
+    }
+    const msg = await res.json()
+    if (msg && msg.code) code.value = String(msg.code)
+  } catch (e) {
+    apiError.value = e.message || 'Eroare la inbox'
+  }
+}
+
+
 async function doReset() {
   errors.value = {}
   apiError.value = ''
@@ -96,9 +117,11 @@ async function doReset() {
 
         <!-- step 2, code + new password -->
         <template v-else-if="step === 'reset'">
-          <p class="hint">Verifică
-            <span class="link" @click="router.push('/inbox')">Inbox-ul mock</span>
-            și copiază codul de mai jos.
+          <p class="hint">
+            <span class="link" @click="autofillCode">Completează codul automat</span>
+            sau deschide
+            <a class="link" href="/inbox" target="_blank" rel="noopener">Inbox-ul mock</a>
+            într-un tab nou.
           </p>
           <div class="field">
             <input v-model="code" type="text" placeholder="COD DE RESETARE"
