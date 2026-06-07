@@ -503,6 +503,38 @@ export const submissionsApi = {
         _json(`/homeworks/${homeworkId}/students?page=${page}&pageSize=${pageSize}`),
     fileUrl: (homeworkId, studentId) =>
         `${BASE}/homeworks/${homeworkId}/students/${studentId}/file`,
+    // streams the file with the auth header, pops a download in the browser
+    // can't use a plain <a href> because the server needs the bearer token
+    downloadFile: async (homeworkId, studentId, suggestedName = 'submission') => {
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/homeworks/${homeworkId}/students/${studentId}/file`, {
+            headers: {
+                ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                'ngrok-skip-browser-warning': 'true',
+            },
+        })
+        _handleSessionHeaders(res)
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        // try to read the server-supplied filename, fall back to the caller's hint
+        let filename = suggestedName
+        const cd = res.headers.get('Content-Disposition') || ''
+        const m = cd.match(/filename="?([^"]+)"?/)
+        if (m) filename = m[1]
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        // free the blob after the click registered
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    },
 }
 
 // all the homework routes, used by pretty much every view

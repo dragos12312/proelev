@@ -1,12 +1,13 @@
 <script setup>
 // one form used for both adding and editing a homework
 // which mode we are in is decided by whether the url has an id or not
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
 import { homeworksApi } from '../api.js'
+import { currentUser } from '../utils/auth.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -14,9 +15,39 @@ const route = useRoute()
 // if the route has an id then we are editing, otherwise we are adding a new one
 const isEdit = computed(() => !!route.params.id)
 
-// class and subject drop down values
-const grades   = ['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B']
-const subjects = ['Matematică', 'Limba Română', 'Științele naturii', 'Limba Engleză', 'Istorie', 'Geografie']
+// teachers can only post for their (class, subject) pairs, so the dropdowns
+// are restricted to what they teach. admins still see everything.
+const isTeacher = computed(() => currentUser.value?.role === 'teacher')
+const assignments = computed(() => currentUser.value?.assignments || [])
+
+// full lists used for admins
+const allGrades   = ['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B']
+const allSubjects = ['Matematică', 'Limba Română', 'Științele naturii', 'Limba Engleză', 'Istorie', 'Geografie']
+
+// teacher-restricted lists, derived from /auth/me's assignments[] field
+const teacherClasses = computed(() => {
+  const names = new Set()
+  for (const a of assignments.value) if (a?.class?.name) names.add(a.class.name)
+  return [...names].sort()
+})
+const teacherSubjects = computed(() => {
+  // once the teacher picks a class, only show subjects they teach for that class
+  if (!form.value.assignedClass) {
+    const names = new Set()
+    for (const a of assignments.value) if (a?.subject?.name) names.add(a.subject.name)
+    return [...names].sort()
+  }
+  const names = new Set()
+  for (const a of assignments.value) {
+    if (a?.class?.name === form.value.assignedClass && a?.subject?.name) {
+      names.add(a.subject.name)
+    }
+  }
+  return [...names].sort()
+})
+
+const grades   = computed(() => isTeacher.value ? teacherClasses.value : allGrades)
+const subjects = computed(() => isTeacher.value ? teacherSubjects.value : allSubjects)
 
 const form = ref({
   title: '',
@@ -30,6 +61,16 @@ const form = ref({
 
 const errors   = ref({})
 const apiError = ref('')
+
+// if a teacher switches classes and the current subject isn't on their
+// new (class, subject) list, blank it out so they can't submit a combo
+// the backend would 403
+watch(() => form.value.assignedClass, () => {
+  if (!isTeacher.value) return
+  if (form.value.subject && !subjects.value.includes(form.value.subject)) {
+    form.value.subject = ''
+  }
+})
 
 onMounted(async () => {
   // in edit mode we prefill the form with the existing homework from the server
@@ -128,6 +169,10 @@ function cancel() {
 
         <div v-if="apiError" class="api-error">{{ apiError }}</div>
 
+        <div v-if="isTeacher" class="info-banner">
+          Poți crea teme doar pentru clasele și materiile pe care le predai.
+        </div>
+
         <div class="form">
           <div class="field">
             <label>Titlu</label>
@@ -210,6 +255,16 @@ function cancel() {
   background: #ffe5e5;
   color: #cc0000;
   border: 1px solid #cc0000;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: clamp(12px, 1.3vw, 14px);
+}
+
+.info-banner {
+  background: #eef5ff;
+  color: #185FA5;
+  border: 1px solid #b5d0f0;
   border-radius: 8px;
   padding: 10px 16px;
   margin-bottom: 16px;

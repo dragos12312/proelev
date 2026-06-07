@@ -85,6 +85,14 @@ function cancelGrade(s) {
   editingGrade.value = { ...editingGrade.value }
 }
 
+async function downloadSubmission(s) {
+  try {
+    await submissionsApi.downloadFile(id.value, s.id, s.submissionFileName || `tema-${s.name || s.id}`)
+  } catch (e) {
+    alert(e.message || 'Eroare la descărcare')
+  }
+}
+
 async function loadStudents() {
   try {
     studentsList.value = await fetchAllStudents(id.value)
@@ -260,8 +268,13 @@ function goToStats() {
           <div v-if="myRow && myRow.feedback" class="feedback-box">
             <b>Feedback profesor:</b> {{ myRow.feedback }}
           </div>
-          <textarea v-model="submissionText" rows="3" placeholder="Scrie aici sau atașează un fișier"></textarea>
-          <input type="file" @change="onFilePicked" />
+          <textarea v-model="submissionText" rows="3" placeholder="Scrie răspunsul aici (text)"></textarea>
+          <label class="file-pick">
+            Atașează un fișier (opțional, max 1 MB)
+            <input type="file" @change="onFilePicked" />
+          </label>
+          <div v-if="submissionFile" class="muted small">📎 {{ submissionFile.name }}</div>
+          <p class="muted small">Trebuie să trimiți text, un fișier, sau ambele.</p>
           <div v-if="submissionError" class="api-error">{{ submissionError }}</div>
           <button class="btn-submit" :disabled="submissionBusy" @click="submitMine">
             {{ submissionBusy ? 'Se trimite...' : 'Trimite tema' }}
@@ -314,8 +327,8 @@ function goToStats() {
                 <div v-if="student.submittedAt">
                   <span class="muted small">{{ student.submittedAt.replace('T', ' ').slice(0, 16) }}</span>
                   <div v-if="student.submissionText" class="sub-text">{{ student.submissionText }}</div>
-                  <a v-if="student.hasFile" target="_blank" rel="noopener"
-                     :href="`/homeworks/${id}/students/${student.id}/file`">descarcă fișier</a>
+                  <button v-if="student.hasFile" class="btn-link"
+                          @click="downloadSubmission(student)">descarcă fișier</button>
                 </div>
                 <span v-else class="muted small">netrimis</span>
               </td>
@@ -473,6 +486,8 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
   font-family: 'Inter', sans-serif; font-size: 13px; margin: 8px 0;
 }
 .submit-card input[type="file"] { font-size: 12px; margin-bottom: 8px; }
+.file-pick { display: block; font-size: 12px; color: #555; margin: 8px 0; }
+.file-pick input[type="file"] { display: block; margin-top: 4px; }
 .btn-submit {
   background: #2a9d2a; color: white; border: none;
   padding: 8px 20px; border-radius: 6px; cursor: pointer;
@@ -500,6 +515,12 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
   background: #f7f7f7; padding: 4px 6px; border-radius: 4px;
   max-height: 60px; overflow-y: auto;
 }
+.btn-link {
+  background: none; border: none; color: #185FA5; text-decoration: underline;
+  cursor: pointer; padding: 0; margin-top: 4px; font-size: 12px;
+  font-family: 'Inter', sans-serif;
+}
+.btn-link:hover { color: #134d87; }
 .btn-del, .btn-cancel { background-color: #c94040; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: clamp(10px, 1.1vw, 12px); font-weight: 700; font-family: 'Inter', sans-serif; }
 .btn-del:hover, .btn-cancel:hover { background-color: #a82828; }
 </style>
