@@ -218,6 +218,12 @@ async def submit_homework(
         s.submission_file_name = file_name
     db.commit()
     db.refresh(s)
+    # notify the teacher who created this homework that a student turned it in
+    try:
+        from notifications import notify_submission_uploaded
+        notify_submission_uploaded(db, hw, user)
+    except Exception as _e:
+        import logging; logging.getLogger(__name__).warning("notify_submission_uploaded failed: %s", _e)
     return student_to_dict(s)
 
 
@@ -244,6 +250,12 @@ def grade_submission(
         s.feedback = body.feedback
     db.commit()
     db.refresh(s)
+    # notify the student (and their parents) that a grade / feedback landed
+    try:
+        from notifications import notify_grade_given
+        notify_grade_given(db, hw, s, body.grade, body.feedback)
+    except Exception as _e:
+        import logging; logging.getLogger(__name__).warning("notify_grade_given failed: %s", _e)
     return student_to_dict(s)
 
 

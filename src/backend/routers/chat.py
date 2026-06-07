@@ -172,6 +172,24 @@ async def chat_ws(websocket: WebSocket):
                     continue
                 await _broadcast_to_room(room_id, {"type": "message", "room_id": room_id, "message": stored})
 
+                # notify offline recipients. global room gets skipped so we
+                # don't spam everyone; dms + group rooms notify everyone in
+                # `participants` except the sender themselves
+                try:
+                    room = chat_store.get_room(room_id)
+                    if room and room.get("type") != "global":
+                        recipients = [p for p in room.get("participants", []) if p != state["user_id"]]
+                        if recipients:
+                            from notifications import notify_chat_message
+                            notify_chat_message(
+                                recipients,
+                                author_name=state["user_name"] or "Cineva",
+                                text=text,
+                                room_id=room_id,
+                            )
+                except Exception as _e:
+                    import logging; logging.getLogger(__name__).warning("notify_chat_message failed: %s", _e)
+
     except WebSocketDisconnect:
         pass
     finally:

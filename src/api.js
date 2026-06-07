@@ -723,6 +723,18 @@ export const adminApi = {
     runAi: () => _json('/admin/ai/run', { method: 'POST' }),
 }
 
+// assignment 6, notification feed (newest first, red unread badge)
+export const notificationsApi = {
+    list:        (unreadOnly = false, limit = 50) =>
+        _json(`/notifications?unread_only=${unreadOnly}&limit=${limit}`),
+    unreadCount: () =>
+        _json('/notifications/unread_count'),
+    markRead:    (id) =>
+        _json(`/notifications/${id}/read`, { method: 'POST' }),
+    markAllRead: () =>
+        _json('/notifications/read_all', { method: 'POST' }),
+}
+
 // assignment 5 gold, heavy compute stat + perf demo
 export const statsApi = {
     byTag:    (mode = 'naive') => _json(`/stats/by-tag?mode=${mode}`),

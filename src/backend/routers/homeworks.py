@@ -114,6 +114,14 @@ def create_homework(
 
     db.commit()
     db.refresh(hw)
+    # notify all students in the class + their parents that a new homework
+    # landed. swallowed silently if anything goes wrong, never blocks the
+    # success response.
+    try:
+        from notifications import notify_homework_created
+        notify_homework_created(db, hw)
+    except Exception as _e:
+        import logging; logging.getLogger(__name__).warning("notify_homework_created failed: %s", _e)
     return homework_to_dict(hw)
 
 

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 
 from routers import homeworks, students, auth, generator, comments, chat, admin, heavy_stats, invites, lookups
+import notifications
 from graphql_schema import schema as gql_schema
 from database import SessionLocal
 from seed import seed_lookups
@@ -73,6 +74,7 @@ app.include_router(heavy_stats.router, prefix="/stats",      tags=["HeavyStats"]
 app.include_router(invites.admin_router,  prefix="/admin",   tags=["Admin"])
 app.include_router(invites.public_router, prefix="/auth",    tags=["Auth"])
 app.include_router(lookups.router,        prefix="/lookups", tags=["Lookups"])
+app.include_router(notifications.router,  prefix="/notifications", tags=["Notifications"])
 
 # graphql lives under /graphql, same store as the rest endpoints
 graphql_app = GraphQLRouter(gql_schema)

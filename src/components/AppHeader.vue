@@ -3,6 +3,7 @@
 // the toast notification mounts here so dms pop up on any page
 import logo from '../assets/logo.png'
 import ChatNotification from './ChatNotification.vue'
+import NotificationBell from './NotificationBell.vue'
 </script>
 
 <template>
@@ -12,6 +13,7 @@ import ChatNotification from './ChatNotification.vue'
       <h1 class="title">ProElev</h1>
       <p class="tagline">Perseverența duce la reușite!</p>
     </div>
+    <NotificationBell />
     <ChatNotification />
   </div>
 </template>
@@ -44,7 +46,7 @@ import ChatNotification from './ChatNotification.vue'
   flex: 1;
   align-items: center;
   text-align: center;
-  padding-right: clamp(40px, 9vw, 120px); /* leaves room for the profile avatar */
+  padding-right: clamp(96px, 15vw, 180px); /* leaves room for the bell + profile avatar */
   min-width: 0;
 }
 
@@ -64,6 +66,6 @@ import ChatNotification from './ChatNotification.vue'
 }
 
 @media (max-width: 600px) {
-  .title-block { padding-right: 48px; }
+  .title-block { padding-right: 96px; }
 }
 </style>

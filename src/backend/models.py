@@ -329,6 +329,29 @@ class ActionLog(Base):
     )
 
 
+# assignment 6, per-user notifications. one row per event delivered to one
+# recipient (so a single homework triggers N rows, one per student + parent).
+# read_at is null until the user clicks it / marks all read.
+class Notification(Base):
+    __tablename__ = "notification"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    kind       = Column(String(50),  nullable=False)
+    title      = Column(String(200), nullable=False)
+    body       = Column(String(500), nullable=True)
+    link       = Column(String(255), nullable=True)
+    created_at = Column(DateTime,    nullable=False)
+    read_at    = Column(DateTime,    nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        # newest-first listing + unread count both filter by user_id, sort by created_at
+        Index("ix_notification_user_created", "user_id", "created_at"),
+    )
+
+
 # gold, observation list of users the detector has flagged
 # one row per user, score accumulates across detection cycles
 # admin can dismiss to clear the flag, dismissed rows hang around for the audit trail
