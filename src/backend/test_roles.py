@@ -417,6 +417,34 @@ class TestSubmissionFlow:
         )
         assert r.status_code == 403
 
+    def test_parent_sees_child_grade_and_feedback(self):
+        # teacher creates and grades; parent should see their child's grade
+        # and feedback on the student list for that homework
+        prof_token = login_three_factor(client, "prof@proelev.ro", "Profesor1")
+        hw = client.post("/homeworks", headers=_h(prof_token), json={
+            "title": "Sub4", "subject": "Matematică", "assignedClass": "4A",
+            "dueDate": "2026-12-01", "description": "x",
+        }).json()
+        elev_token = login_three_factor(client, "elev@proelev.ro", "Elev1234")
+        sub = client.post(f"/homeworks/{hw['id']}/submit", headers=_h(elev_token),
+                          data={"text": "salut"}).json()
+        client.put(
+            f"/homeworks/{hw['id']}/students/{sub['id']}/grade",
+            headers=_h(prof_token),
+            json={"grade": 8, "feedback": "Foarte bine!"},
+        )
+        par_token = login_three_factor(client, "parinte@proelev.ro", "Parinte1")
+        listed = client.get(
+            f"/homeworks/{hw['id']}/students?pageSize=100",
+            headers=_h(par_token),
+        ).json()
+        # exactly the parent's child appears, with grade + feedback visible
+        assert len(listed["items"]) == 1
+        row = listed["items"][0]
+        assert row["grade"] == 8
+        assert row["feedback"] == "Foarte bine!"
+        assert row["submittedAt"] is not None
+
 
 # ─── lookups ────────────────────────────────────────────────────────────
 

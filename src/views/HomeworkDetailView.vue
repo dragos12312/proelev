@@ -22,6 +22,20 @@ const canSeeStats = computed(() => role.value === 'admin' || role.value === 'tea
 
 // submission UI state (student side)
 const myRow         = computed(() => studentsList.value.find(s => s.userId === authUser.value?.id) || null)
+// parent side: rows for every child of the logged-in parent (backend already
+// filters the response down to the parent's children only)
+const childrenRows = computed(() => {
+  if (!isParent.value) return []
+  // dedupe by id just in case the legacy roster also seeded a row with the same id
+  const seen = new Set()
+  const out = []
+  for (const s of studentsList.value) {
+    if (seen.has(s.id)) continue
+    seen.add(s.id)
+    out.push(s)
+  }
+  return out
+})
 const submissionText = ref('')
 const submissionFile = ref(null)
 const submissionBusy = ref(false)
@@ -256,6 +270,41 @@ function goToStats() {
           </div>
         </div>
 
+        <!-- homework brief, visible to every role so they know what was assigned -->
+        <div class="hw-brief">
+          <div class="hw-meta">
+            <span><b>Clasă:</b> {{ homework.assignedClass }}</span>
+            <span><b>Materie:</b> {{ homework.subject }}</span>
+            <span><b>Termen:</b> {{ homework.dueDate }}</span>
+          </div>
+          <div v-if="homework.description" class="hw-desc">{{ homework.description }}</div>
+        </div>
+
+        <!-- parent view, read-only per-child status, grade, feedback -->
+        <div v-if="isParent" class="parent-card">
+          <h3>Situația copiilor mei</h3>
+          <div v-if="childrenRows.length === 0" class="muted small">
+            Niciunul dintre copiii tăi nu este înscris pentru această temă.
+          </div>
+          <div v-for="row in childrenRows" :key="row.id" class="child-row">
+            <div class="child-name">{{ row.name }}</div>
+            <div class="child-stat">
+              <span v-if="row.submittedAt" class="badge ok">
+                Trimis pe {{ row.submittedAt.replace('T', ' ').slice(0, 16) }}
+              </span>
+              <span v-else class="badge no">Netrimis</span>
+            </div>
+            <div class="child-stat">
+              Notă:
+              <b v-if="row.grade !== null && row.grade !== undefined" class="grade-val">{{ row.grade }}</b>
+              <span v-else class="muted">FĂRĂ NOTĂ</span>
+            </div>
+            <div v-if="row.feedback" class="feedback-box">
+              <b>Feedback profesor:</b> {{ row.feedback }}
+            </div>
+          </div>
+        </div>
+
         <!-- assignment 6: student-only submission card -->
         <div v-if="isStudent" class="submit-card">
           <h3>Tema mea</h3>
@@ -281,7 +330,7 @@ function goToStats() {
           </button>
         </div>
 
-        <div class="table-wrapper">
+        <div v-if="!isParent" class="table-wrapper">
           <div class="per-page" v-if="!isStudent">
             Articole per pagină:
             <span v-for="n in [5, 10, 15, 20]"
@@ -488,6 +537,39 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
 .submit-card input[type="file"] { font-size: 12px; margin-bottom: 8px; }
 .file-pick { display: block; font-size: 12px; color: #555; margin: 8px 0; }
 .file-pick input[type="file"] { display: block; margin-top: 4px; }
+
+/* homework brief shown to every role */
+.hw-brief {
+  background: #fbfbfb; border: 1px solid #e0e0e0; border-radius: 10px;
+  padding: clamp(10px, 1.5vw, 16px); margin-bottom: 16px;
+}
+.hw-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: #333; }
+.hw-desc {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;
+  font-size: 13px; color: #444; white-space: pre-wrap;
+}
+
+/* parent view card */
+.parent-card {
+  background: #f5faff; border: 1px solid #b0c4de; border-radius: 10px;
+  padding: 16px; margin-bottom: 20px;
+}
+.parent-card h3 { margin: 0 0 10px; color: #185FA5; }
+.child-row {
+  background: white; border: 1px solid #ddd; border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 10px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.child-row:last-child { margin-bottom: 0; }
+.child-name { font-weight: 700; color: #185FA5; min-width: 140px; }
+.child-stat { font-size: 13px; }
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+}
+.badge.ok { background: #d4edda; color: #155724; }
+.badge.no { background: #f5d6d6; color: #842029; }
+.grade-val { color: #2a9d2a; font-size: 16px; }
 .btn-submit {
   background: #2a9d2a; color: white; border: none;
   padding: 8px 20px; border-radius: 6px; cursor: pointer;
