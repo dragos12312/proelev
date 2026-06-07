@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from models import (
     Subject, SchoolClass, Role, Permission, User,
+    teacher_assignment, parent_child,
     SUBJECT_NAMES, CLASS_NAMES, PERMISSIONS, ROLE_PERMISSIONS, DEMO_USERS,
+    ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
 )
 from auth import hash_password
 
@@ -57,5 +59,63 @@ def seed_lookups(db: Session) -> None:
                 security_question="Care este numele aplicației?",
                 security_answer_hash=hash_password("proelev"),
             ))
+    db.flush()
+
+    # ── assignment 6: wire up demo teacher / student / parent relationships ──
+    # all idempotent, only added if not already there
+    _wire_demo_relations(db, existing_classes_by_name(db), existing_subjects_by_name(db))
 
     db.commit()
+
+
+def existing_classes_by_name(db: Session) -> dict[str, SchoolClass]:
+    return {c.name: c for c in db.query(SchoolClass).all()}
+
+
+def existing_subjects_by_name(db: Session) -> dict[str, Subject]:
+    return {s.name: s for s in db.query(Subject).all()}
+
+
+def _wire_demo_relations(db: Session, classes: dict, subjects: dict) -> None:
+    """For the seeded prof@ / elev@ / parinte@ accounts, ensure:
+      - prof teaches Matematică for class 4A
+      - elev belongs to class 4A
+      - parinte has elev as a child
+    """
+    prof    = db.query(User).filter_by(email="prof@proelev.ro").first()
+    elev    = db.query(User).filter_by(email="elev@proelev.ro").first()
+    parinte = db.query(User).filter_by(email="parinte@proelev.ro").first()
+
+    class_4a = classes.get("4A")
+    math     = subjects.get("Matematică")
+
+    # student in 4A
+    if elev and class_4a and elev.class_id != class_4a.id:
+        elev.class_id = class_4a.id
+
+    # teacher of Matematică 4A
+    if prof and class_4a and math:
+        already = db.execute(
+            teacher_assignment.select().where(
+                teacher_assignment.c.user_id    == prof.id,
+                teacher_assignment.c.class_id   == class_4a.id,
+                teacher_assignment.c.subject_id == math.id,
+            )
+        ).first()
+        if not already:
+            db.execute(teacher_assignment.insert().values(
+                user_id=prof.id, class_id=class_4a.id, subject_id=math.id,
+            ))
+
+    # parent of elev
+    if parinte and elev:
+        already = db.execute(
+            parent_child.select().where(
+                parent_child.c.parent_user_id == parinte.id,
+                parent_child.c.child_user_id  == elev.id,
+            )
+        ).first()
+        if not already:
+            db.execute(parent_child.insert().values(
+                parent_user_id=parinte.id, child_user_id=elev.id,
+            ))

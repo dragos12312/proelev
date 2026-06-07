@@ -9,7 +9,8 @@
 #   homework      1 -- many comment
 #   user          standalone, no fks
 from sqlalchemy import (
-    Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Table, Index
+    Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Table, Index,
+    LargeBinary, Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -32,6 +33,25 @@ student_tag = Table(
     "student_tag", Base.metadata,
     Column("student_id", Integer, ForeignKey("student.id", ondelete="CASCADE"), primary_key=True),
     Column("tag_id",     Integer, ForeignKey("tag.id",     ondelete="CASCADE"), primary_key=True),
+)
+
+
+# assignment 6, teacher gets a list of (class, subject) pairs they teach
+# composite PK lets the same teacher be assigned to multiple combinations
+teacher_assignment = Table(
+    "teacher_assignment", Base.metadata,
+    Column("user_id",    Integer, ForeignKey("user.id",         ondelete="CASCADE"), primary_key=True),
+    Column("class_id",   Integer, ForeignKey("school_class.id", ondelete="CASCADE"), primary_key=True),
+    Column("subject_id", Integer, ForeignKey("subject.id",      ondelete="CASCADE"), primary_key=True),
+)
+
+
+# assignment 6, parents link to one or more children, children can have
+# multiple parents (siblings / divorced parents both work)
+parent_child = Table(
+    "parent_child", Base.metadata,
+    Column("parent_user_id", Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True),
+    Column("child_user_id",  Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -87,9 +107,12 @@ class Homework(Base):
     due_date    = Column(Date, nullable=False)
     description = Column(String, nullable=True)
     file_name   = Column(String(255), nullable=True)
+    # assignment 6, the teacher who posted this homework, null for legacy / admin posts
+    created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
 
     subject        = relationship("Subject",     back_populates="homeworks")
     assigned_class = relationship("SchoolClass", back_populates="homeworks")
+    created_by     = relationship("User",        foreign_keys=[created_by_user_id])
     students = relationship(
         "Student", back_populates="homework",
         cascade="all, delete-orphan", passive_deletes=True,
@@ -101,14 +124,24 @@ class Homework(Base):
 
 
 # one row per student per homework, grade can be null when not yet marked
+# assignment 6 adds the submission fields, the row IS the submission record
+# user_id links to the User account of the student (nullable for legacy rows)
 class Student(Base):
     __tablename__ = "student"
 
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    homework_id  = Column(Integer, ForeignKey("homework.id", ondelete="CASCADE"), nullable=False)
-    name         = Column(String(150), nullable=False)
-    date_time    = Column(String(20), nullable=False)
-    grade        = Column(Integer, nullable=True)
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    homework_id          = Column(Integer, ForeignKey("homework.id", ondelete="CASCADE"), nullable=False)
+    user_id              = Column(Integer, ForeignKey("user.id",     ondelete="SET NULL"), nullable=True)
+    name                 = Column(String(150), nullable=False)
+    date_time            = Column(String(20), nullable=False)
+    grade                = Column(Integer, nullable=True)
+    # assignment 6 submission, set when the student uploads
+    submitted_at         = Column(DateTime, nullable=True)
+    submission_text      = Column(Text,     nullable=True)
+    submission_file_name = Column(String(255), nullable=True)
+    submission_blob      = Column(LargeBinary, nullable=True)
+    # assignment 6, teacher feedback alongside the grade
+    feedback             = Column(Text, nullable=True)
 
     __table_args__ = (
         # grade must be between 1 and 10 if present, enforced at the db level too
@@ -117,6 +150,7 @@ class Student(Base):
 
     homework = relationship("Homework", back_populates="students")
     tags     = relationship("Tag", secondary=student_tag, back_populates="students")
+    user     = relationship("User", foreign_keys=[user_id])
 
 
 # assignment 5 gold, lookup table of short labels describing a submission
@@ -146,6 +180,8 @@ class Comment(Base):
 # user table, every user has a role which carries the permission set
 # security_question + security_answer_hash power factor #3 of the login flow
 # and the password recovery question
+# assignment 6 adds class_id (for student users), plus M2M to teacher_assignment
+# (for teacher users) and parent_child (for parents and children both ways)
 class User(Base):
     __tablename__ = "user"
 
@@ -157,8 +193,39 @@ class User(Base):
     role_id              = Column(Integer, ForeignKey("role.id", ondelete="RESTRICT"), nullable=False)
     security_question    = Column(String(255), nullable=True)
     security_answer_hash = Column(String(255), nullable=True)
+    class_id             = Column(Integer, ForeignKey("school_class.id", ondelete="SET NULL"), nullable=True)
 
     role = relationship("Role", back_populates="users")
+    school_class = relationship("SchoolClass", foreign_keys=[class_id])
+
+    # teacher only: what (class, subject) pairs they're allowed to teach
+    teacher_classes = relationship(
+        "SchoolClass", secondary=teacher_assignment,
+        primaryjoin="User.id == teacher_assignment.c.user_id",
+        secondaryjoin="SchoolClass.id == teacher_assignment.c.class_id",
+        viewonly=True,
+    )
+    teacher_subjects = relationship(
+        "Subject", secondary=teacher_assignment,
+        primaryjoin="User.id == teacher_assignment.c.user_id",
+        secondaryjoin="Subject.id == teacher_assignment.c.subject_id",
+        viewonly=True,
+    )
+
+    # parent side: list of child users
+    children = relationship(
+        "User", secondary=parent_child,
+        primaryjoin="User.id == parent_child.c.parent_user_id",
+        secondaryjoin="User.id == parent_child.c.child_user_id",
+        back_populates="parents",
+    )
+    # child side: list of parent users
+    parents = relationship(
+        "User", secondary=parent_child,
+        primaryjoin="User.id == parent_child.c.child_user_id",
+        secondaryjoin="User.id == parent_child.c.parent_user_id",
+        back_populates="children",
+    )
 
 
 # silver, server side session record so logout actually invalidates a token
@@ -200,6 +267,31 @@ class PasswordReset(Base):
     expires_at   = Column(DateTime, nullable=False)
     used         = Column(Integer, nullable=False, default=0)
     created_at   = Column(DateTime, nullable=False)
+
+
+# assignment 6, invite codes the admin generates for teacher/student/parent
+# self-registration. each code locks down the role the new account will have,
+# and can optionally preset a class (student) or subject (teacher).
+# default lifetime is 7 days, single use.
+class InviteCode(Base):
+    __tablename__ = "invite_code"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    code               = Column(String(32), nullable=False, unique=True)
+    role_name          = Column(String(50), nullable=False)
+    class_id           = Column(Integer, ForeignKey("school_class.id", ondelete="SET NULL"), nullable=True)
+    subject_id         = Column(Integer, ForeignKey("subject.id",      ondelete="SET NULL"), nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("user.id",         ondelete="SET NULL"), nullable=True)
+    used_by_user_id    = Column(Integer, ForeignKey("user.id",         ondelete="SET NULL"), nullable=True)
+    created_at         = Column(DateTime, nullable=False)
+    expires_at         = Column(DateTime, nullable=False)
+    used_at            = Column(DateTime, nullable=True)
+    revoked            = Column(Integer,  nullable=False, default=0)
+
+    preset_class   = relationship("SchoolClass", foreign_keys=[class_id])
+    preset_subject = relationship("Subject",     foreign_keys=[subject_id])
+    created_by     = relationship("User",        foreign_keys=[created_by_user_id])
+    used_by        = relationship("User",        foreign_keys=[used_by_user_id])
 
 
 # gold, audit log of every request that touches the api
@@ -263,17 +355,26 @@ SUBJECT_NAMES = [
 CLASS_NAMES = ["1A", "1B", "2A", "2B", "3A", "3B", "4A", "4B"]
 
 # roles and permissions
-ROLE_ADMIN = "admin"
-ROLE_USER  = "user"
+ROLE_ADMIN   = "admin"
+ROLE_USER    = "user"
+ROLE_TEACHER = "teacher"
+ROLE_STUDENT = "student"
+ROLE_PARENT  = "parent"
 
 # every action a user can do is one of these codes
-# admin gets all of them, normal user gets only the read ones plus posting comments
+# admin gets all of them, every other role gets a subset
+# assignment 6 added the submission + invite + parent-child permissions
 PERMISSIONS = [
     "homework_read", "homework_create", "homework_update", "homework_delete",
     "student_read",  "student_create",  "student_update",  "student_delete",
     "comment_read",  "comment_create",  "comment_update",  "comment_delete",
     "stats_read",
     "chat_read",     "chat_send",
+    # assignment 6
+    "submission_create_own",        # student can upload their own submission
+    "submission_grade_own_class",   # teacher can grade homeworks they posted
+    "homework_create_own_class",    # teacher can post for class+subject they teach
+    "invite_manage",                # admin generate/revoke invite codes
 ]
 
 # what each role gets, kept as plain lists so seed.py can map them by code
@@ -285,13 +386,44 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "stats_read",
         "chat_read",     "chat_send",
     ],
+    # teacher can read+post homeworks for their assigned class+subject pairs
+    # and grade the ones they posted. they cant see other teachers' homeworks.
+    ROLE_TEACHER: [
+        "homework_read", "homework_create_own_class", "homework_update", "homework_delete",
+        "student_read",  "submission_grade_own_class",
+        "comment_read",  "comment_create",
+        "stats_read",
+        "chat_read",     "chat_send",
+    ],
+    # student sees only homeworks for their class. they submit, dont grade.
+    # no stats access, that hides the pie chart entirely.
+    ROLE_STUDENT: [
+        "homework_read",
+        "submission_create_own",
+        "comment_read", "comment_create",
+        "chat_read",    "chat_send",
+    ],
+    # parent sees homeworks for their children's classes and only their child's
+    # submission status + grade + feedback. no stats access either.
+    ROLE_PARENT: [
+        "homework_read",
+        "comment_read", "comment_create",
+        "chat_read",    "chat_send",
+    ],
 }
 
-# the two demo accounts the lab teacher will log in as
+# the two demo accounts the lab teacher will log in as, plus the assignment 6
+# trio for teacher/student/parent. seeded with relationships in seed.py
 DEMO_USERS = [
-    {"email": "admin@proelev.ro", "password": "Admin123",  "name": "Admin",     "role": ROLE_ADMIN},
-    {"email": "user@proelev.ro",  "password": "Parola123", "name": "User Demo", "role": ROLE_USER},
+    {"email": "admin@proelev.ro",   "password": "Admin123",   "name": "Admin",        "role": ROLE_ADMIN},
+    {"email": "user@proelev.ro",    "password": "Parola123",  "name": "User Demo",    "role": ROLE_USER},
+    {"email": "prof@proelev.ro",    "password": "Profesor1",  "name": "Prof. Demo",   "role": ROLE_TEACHER},
+    {"email": "elev@proelev.ro",    "password": "Elev1234",   "name": "Elev Demo",    "role": ROLE_STUDENT},
+    {"email": "parinte@proelev.ro", "password": "Parinte1",   "name": "Părinte Demo", "role": ROLE_PARENT},
 ]
+
+# assignment 6 invite codes for self-register flow, in days
+INVITE_CODE_TTL_DAYS = 7
 
 # the per-class roster used when a homework is created, students are auto inserted
 CLASS_ROSTER: dict[str, list[str]] = {

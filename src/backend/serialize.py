@@ -22,11 +22,18 @@ def homework_to_dict(hw: Homework) -> dict:
 
 def student_to_dict(s: Student) -> dict:
     return {
-        "id":         s.id,
-        "homeworkId": s.homework_id,
-        "name":       s.name,
-        "dateTime":   s.date_time,
-        "grade":      s.grade,
+        "id":             s.id,
+        "homeworkId":     s.homework_id,
+        "userId":         s.user_id,
+        "name":           s.name,
+        "dateTime":       s.date_time,
+        "grade":          s.grade,
+        # assignment 6 submission + feedback
+        "submittedAt":         s.submitted_at.isoformat() + "Z" if s.submitted_at else None,
+        "submissionText":      s.submission_text,
+        "submissionFileName":  s.submission_file_name,
+        "hasFile":             bool(s.submission_blob),
+        "feedback":            s.feedback,
     }
 
 

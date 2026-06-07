@@ -7,11 +7,91 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
 import { setCookie, getCookie, deleteCookie } from '../utils/cookies.js'
-import { homeworksApi, fetchAllStudents, commentsApi } from '../api.js'
-import { hasPerm } from '../utils/auth.js'
+import { homeworksApi, fetchAllStudents, commentsApi, submissionsApi } from '../api.js'
+import { hasPerm, currentUser as authUser } from '../utils/auth.js'
 
-// only admins can edit a homework, the comment crud stays available to all logged in users
+// only admins/teachers can edit a homework, the comment crud stays available to all logged in users
 const canEdit = computed(() => hasPerm('homework_update'))
+
+// assignment 6, role-aware UI flags
+const role = computed(() => authUser.value?.role)
+const isStudent = computed(() => role.value === 'student')
+const isTeacher = computed(() => role.value === 'teacher')
+const isParent  = computed(() => role.value === 'parent')
+const canSeeStats = computed(() => role.value === 'admin' || role.value === 'teacher' || role.value === 'user')
+
+// submission UI state (student side)
+const myRow         = computed(() => studentsList.value.find(s => s.userId === authUser.value?.id) || null)
+const submissionText = ref('')
+const submissionFile = ref(null)
+const submissionBusy = ref(false)
+const submissionError = ref('')
+
+async function loadMySubmissionDraft() {
+  if (myRow.value) {
+    submissionText.value = myRow.value.submissionText || ''
+  }
+}
+
+async function submitMine() {
+  submissionError.value = ''
+  if (!submissionText.value.trim() && !submissionFile.value) {
+    submissionError.value = 'Trimite text sau atașează un fișier'
+    return
+  }
+  submissionBusy.value = true
+  try {
+    await submissionsApi.submit(id.value, submissionText.value.trim(), submissionFile.value)
+    submissionFile.value = null
+    await loadStudents()
+    await loadMySubmissionDraft()
+  } catch (e) {
+    submissionError.value = e.message || 'Eroare la trimitere'
+  } finally {
+    submissionBusy.value = false
+  }
+}
+
+function onFilePicked(e) {
+  const f = e.target.files[0]
+  submissionFile.value = f || null
+}
+
+// teacher side, edit grade + feedback per row
+const editingGrade   = ref({})   // { studentId: { grade, feedback } }
+function startGrade(s) {
+  editingGrade.value = {
+    ...editingGrade.value,
+    [s.id]: { grade: s.grade ?? '', feedback: s.feedback ?? '' },
+  }
+}
+async function saveGrade(s) {
+  const draft = editingGrade.value[s.id]
+  if (!draft) return
+  const body = {}
+  if (draft.grade !== '' && draft.grade !== null) body.grade = parseInt(draft.grade)
+  if (draft.feedback !== undefined)               body.feedback = draft.feedback
+  try {
+    await submissionsApi.grade(id.value, s.id, body)
+    delete editingGrade.value[s.id]
+    editingGrade.value = { ...editingGrade.value }
+    await loadStudents()
+  } catch (e) {
+    alert(e.message || 'Eroare la salvare notă')
+  }
+}
+function cancelGrade(s) {
+  delete editingGrade.value[s.id]
+  editingGrade.value = { ...editingGrade.value }
+}
+
+async function loadStudents() {
+  try {
+    studentsList.value = await fetchAllStudents(id.value)
+  } catch (e) {
+    console.error('[HomeworkDetailView] students error', e)
+  }
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -114,6 +194,7 @@ onMounted(async () => {
     homework.value = await homeworksApi.get(hwId)
     studentsList.value = await fetchAllStudents(hwId)
     await loadComments()
+    await loadMySubmissionDraft()
   } catch (e) {
     console.error('[HomeworkDetailView] load error', e)
     notFound.value = true
@@ -163,12 +244,32 @@ function goToStats() {
           </div>
           <div class="right">
             <button v-if="canEdit" class="btn-edit" @click="goToEdit">MODIFICĂ</button>
-            <button class="btn-stats" @click="goToStats">STATISTICI</button>
+            <button v-if="canSeeStats" class="btn-stats" @click="goToStats">STATISTICI</button>
           </div>
         </div>
 
+        <!-- assignment 6: student-only submission card -->
+        <div v-if="isStudent" class="submit-card">
+          <h3>Tema mea</h3>
+          <div v-if="myRow && myRow.submittedAt" class="muted small">
+            Trimis ultima dată: {{ myRow.submittedAt.replace('T', ' ').slice(0, 16) }}
+          </div>
+          <div v-if="myRow && myRow.grade !== null && myRow.grade !== undefined" class="my-grade">
+            Nota ta: <b>{{ myRow.grade }}</b>
+          </div>
+          <div v-if="myRow && myRow.feedback" class="feedback-box">
+            <b>Feedback profesor:</b> {{ myRow.feedback }}
+          </div>
+          <textarea v-model="submissionText" rows="3" placeholder="Scrie aici sau atașează un fișier"></textarea>
+          <input type="file" @change="onFilePicked" />
+          <div v-if="submissionError" class="api-error">{{ submissionError }}</div>
+          <button class="btn-submit" :disabled="submissionBusy" @click="submitMine">
+            {{ submissionBusy ? 'Se trimite...' : 'Trimite tema' }}
+          </button>
+        </div>
+
         <div class="table-wrapper">
-          <div class="per-page">
+          <div class="per-page" v-if="!isStudent">
             Articole per pagină:
             <span v-for="n in [5, 10, 15, 20]"
                   :key="n"
@@ -182,16 +283,56 @@ function goToStats() {
               <th>NUME</th>
               <th>DATA/ORA</th>
               <th>NOTĂ</th>
+              <th v-if="isTeacher">FEEDBACK</th>
+              <th v-if="isTeacher">SUBMISIE</th>
+              <th v-if="isTeacher"></th>
             </tr>
             </thead>
             <tbody>
             <tr v-for="(student, i) in paginatedStudents" :key="i">
               <td>{{ student.name }}</td>
               <td>{{ student.dateTime }}</td>
-              <td>{{ student.grade ?? 'FĂRĂ NOTĂ' }}</td>
+              <td>
+                <template v-if="isTeacher && editingGrade[student.id]">
+                  <input class="grade-input" type="number" min="1" max="10"
+                         v-model="editingGrade[student.id].grade" />
+                </template>
+                <template v-else>
+                  {{ student.grade ?? 'FĂRĂ NOTĂ' }}
+                </template>
+              </td>
+              <td v-if="isTeacher">
+                <template v-if="editingGrade[student.id]">
+                  <textarea class="feedback-input" rows="2"
+                            v-model="editingGrade[student.id].feedback"></textarea>
+                </template>
+                <template v-else>
+                  <span class="muted small">{{ student.feedback || '-' }}</span>
+                </template>
+              </td>
+              <td v-if="isTeacher">
+                <div v-if="student.submittedAt">
+                  <span class="muted small">{{ student.submittedAt.replace('T', ' ').slice(0, 16) }}</span>
+                  <div v-if="student.submissionText" class="sub-text">{{ student.submissionText }}</div>
+                  <a v-if="student.hasFile" target="_blank" rel="noopener"
+                     :href="`/homeworks/${id}/students/${student.id}/file`">descarcă fișier</a>
+                </div>
+                <span v-else class="muted small">netrimis</span>
+              </td>
+              <td v-if="isTeacher">
+                <template v-if="editingGrade[student.id]">
+                  <button class="btn-edit-small" @click="saveGrade(student)">Salvează</button>
+                  <button class="btn-cancel-small" @click="cancelGrade(student)">Anulează</button>
+                </template>
+                <template v-else>
+                  <button class="btn-edit-small" @click="startGrade(student)">Notează</button>
+                </template>
+              </td>
             </tr>
             <tr v-if="paginatedStudents.length === 0">
-              <td colspan="3" style="text-align:center; color:#888;">Niciun elev găsit.</td>
+              <td :colspan="isTeacher ? 6 : 3" style="text-align:center; color:#888;">
+                {{ isStudent ? 'Niciun elev de afișat aici, doar tu poți vedea propria submisie mai sus.' : 'Niciun elev găsit.' }}
+              </td>
             </tr>
             </tbody>
           </table>
@@ -313,6 +454,52 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
 .comment-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .btn-edit-small, .btn-save { background-color: #185FA5; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: clamp(10px, 1.1vw, 12px); font-weight: 700; font-family: 'Inter', sans-serif; }
 .btn-edit-small:hover, .btn-save:hover { background-color: #134d87; }
+.btn-cancel-small {
+  background: #888; color: white; border: none; padding: 4px 10px;
+  border-radius: 4px; cursor: pointer; font-size: clamp(10px, 1.1vw, 12px);
+  font-weight: 700; margin-left: 4px;
+}
+.btn-cancel-small:hover { background: #666; }
+
+/* assignment 6, student submission card */
+.submit-card {
+  background: #f5faff; border: 1px solid #b0c4de; border-radius: 10px;
+  padding: 16px; margin-bottom: 20px;
+}
+.submit-card h3 { margin: 0 0 8px; color: #185FA5; }
+.submit-card textarea {
+  width: 100%; box-sizing: border-box; padding: 8px;
+  border: 1px solid #ccc; border-radius: 6px;
+  font-family: 'Inter', sans-serif; font-size: 13px; margin: 8px 0;
+}
+.submit-card input[type="file"] { font-size: 12px; margin-bottom: 8px; }
+.btn-submit {
+  background: #2a9d2a; color: white; border: none;
+  padding: 8px 20px; border-radius: 6px; cursor: pointer;
+  font-weight: 700; font-family: 'Inter', sans-serif;
+}
+.btn-submit:hover { background: #228022; }
+.btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+.my-grade { font-size: 18px; color: #2a9d2a; margin: 4px 0; }
+.feedback-box {
+  background: white; border: 1px solid #ccc; padding: 8px;
+  border-radius: 6px; margin: 8px 0; font-size: 13px;
+}
+.muted { color: #777; }
+.small { font-size: 11px; }
+.grade-input {
+  width: 50px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+}
+.feedback-input {
+  width: 100%; box-sizing: border-box; padding: 4px;
+  border: 1px solid #ccc; border-radius: 4px; font-size: 12px;
+}
+.sub-text {
+  font-size: 12px; color: #444; margin-top: 4px;
+  background: #f7f7f7; padding: 4px 6px; border-radius: 4px;
+  max-height: 60px; overflow-y: auto;
+}
 .btn-del, .btn-cancel { background-color: #c94040; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: clamp(10px, 1.1vw, 12px); font-weight: 700; font-family: 'Inter', sans-serif; }
 .btn-del:hover, .btn-cancel:hover { background-color: #a82828; }
 </style>

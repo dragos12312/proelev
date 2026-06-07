@@ -83,6 +83,16 @@ class RegisterRequest(BaseModel):
     # silver, 3rd factor for login and recovery
     security_question: str
     security_answer:   str
+    # assignment 6, optional invite code that escalates the new account into
+    # the teacher / student / parent roles. without a code the user gets the
+    # plain "user" role like before.
+    invite_code: Optional[str] = None
+    # for student: which class they're in if the code didn't preset one
+    class_id:    Optional[int] = None
+    # for teacher: which subject they teach if the code didn't preset one
+    subject_id:  Optional[int] = None
+    # for parent: emails of their children (must already be registered)
+    children_emails: Optional[list[str]] = None
 
     @field_validator("name")
     @classmethod
@@ -314,9 +324,16 @@ class StudentUpdate(BaseModel):
 class StudentResponse(BaseModel):
     id: int
     homeworkId: int
+    userId: Optional[int] = None
     name: str
     dateTime: str
-    grade: Optional[int]
+    grade: Optional[int] = None
+    # assignment 6 submission fields
+    submittedAt:        Optional[str] = None
+    submissionText:     Optional[str] = None
+    submissionFileName: Optional[str] = None
+    hasFile:            Optional[bool] = False
+    feedback:           Optional[str] = None
 
 
 class PaginatedStudents(BaseModel):

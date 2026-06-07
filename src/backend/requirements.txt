@@ -18,3 +18,5 @@ pyjwt>=2.9.0
 cryptography>=43.0.0
 scikit-learn>=1.4.0
 numpy>=1.26.0
+# assignment 6, FastAPI needs python-multipart for UploadFile / Form parsing
+python-multipart>=0.0.9

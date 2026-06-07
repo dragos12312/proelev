@@ -7,9 +7,10 @@ import AppProfile from '../components/AppProfile.vue'
 import { setCookie, getCookie } from '../utils/cookies.js'
 import { homeworksGql, homeworksApi, createWebSocket, offline, pendingOps } from '../api.js'
 import { hasPerm } from '../utils/auth.js'
+// assignment 6, teacher uses homework_create_own_class; admin still has homework_create
 
 // admin can add and delete, normal user can only read
-const canCreate = computed(() => hasPerm('homework_create'))
+const canCreate = computed(() => hasPerm('homework_create') || hasPerm('homework_create_own_class'))
 const canDelete = computed(() => hasPerm('homework_delete'))
 
 const router = useRouter()

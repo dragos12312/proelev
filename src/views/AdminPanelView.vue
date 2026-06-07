@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
-import { adminApi, statsApi } from '../api.js'
+import { adminApi, statsApi, invitesApi, lookups } from '../api.js'
 import { currentUser, isAdmin } from '../utils/auth.js'
 
 const router = useRouter()
@@ -100,9 +100,68 @@ function formatLocal(iso) {
        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// ── assignment 6: invite codes ────────────────────────────────────────────
+const invites          = ref([])
+const inviteClasses    = ref([])
+const inviteSubjects   = ref([])
+const newInviteRole    = ref('teacher')
+const newInviteClassId = ref(null)
+const newInviteSubjectId = ref(null)
+const inviteShowDone   = ref(false)
+const inviteJustCreated = ref(null)
+const inviteError      = ref('')
+
+async function loadInvites() {
+  if (!isAdmin()) return
+  try {
+    invites.value = await invitesApi.list(inviteShowDone.value, inviteShowDone.value)
+    if (inviteClasses.value.length === 0) inviteClasses.value = await lookups.classes()
+    if (inviteSubjects.value.length === 0) inviteSubjects.value = await lookups.subjects()
+    inviteError.value = ''
+  } catch (e) {
+    inviteError.value = e.message || 'eroare la coduri'
+  }
+}
+
+async function createInvite() {
+  inviteError.value = ''
+  inviteJustCreated.value = null
+  try {
+    const body = { role: newInviteRole.value }
+    if (newInviteClassId.value)   body.class_id   = newInviteClassId.value
+    if (newInviteSubjectId.value) body.subject_id = newInviteSubjectId.value
+    const inv = await invitesApi.create(body)
+    inviteJustCreated.value = inv
+    newInviteClassId.value   = null
+    newInviteSubjectId.value = null
+    await loadInvites()
+  } catch (e) {
+    let msg = 'Nu pot crea codul'
+    try { const p = JSON.parse(e.message); if (p.detail) msg = p.detail } catch {}
+    inviteError.value = msg
+  }
+}
+
+async function revokeInvite(id) {
+  try {
+    await invitesApi.revoke(id)
+    await loadInvites()
+  } catch (e) {
+    inviteError.value = e.message || 'Eroare la revocare'
+  }
+}
+
+function copyCode(code) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code)
+  }
+}
+
+
 // auto refresh, the lab teacher should see the list change while we generate suspicious traffic
 onMounted(() => {
   loadAll()
+  loadInvites()
   refreshTimer = setInterval(loadAll, 5000)
 })
 onUnmounted(() => {
@@ -184,6 +243,80 @@ onUnmounted(() => {
             Detectorul rulează automat la fiecare 30s în fundal. Apasă „Rulează detector AI"
             pentru a forța un ciclu imediat.
           </p>
+        </section>
+
+        <!-- assignment 6, invite code management -->
+        <section class="card">
+          <header>
+            <h3>Coduri de invitație</h3>
+            <label class="filter">
+              <input type="checkbox" v-model="inviteShowDone" @change="loadInvites" />
+              include expirate / folosite
+            </label>
+          </header>
+          <div v-if="inviteError" class="api-error">{{ inviteError }}</div>
+
+          <div class="invite-form">
+            <select v-model="newInviteRole" class="invite-input">
+              <option value="teacher">Profesor</option>
+              <option value="student">Elev</option>
+              <option value="parent">Părinte</option>
+            </select>
+            <select v-model="newInviteClassId" class="invite-input"
+                    v-if="newInviteRole !== 'parent'">
+              <option :value="null">— clasa (opțional) —</option>
+              <option v-for="c in inviteClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+            <select v-model="newInviteSubjectId" class="invite-input"
+                    v-if="newInviteRole === 'teacher'">
+              <option :value="null">— materia (opțional) —</option>
+              <option v-for="s in inviteSubjects" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <button class="btn-action" @click="createInvite">Generează cod</button>
+          </div>
+
+          <div v-if="inviteJustCreated" class="just-created">
+            <div class="big-code" @click="copyCode(inviteJustCreated.code)">
+              {{ inviteJustCreated.code }}
+              <span class="copy-hint">click pentru copiere</span>
+            </div>
+            <div class="muted">
+              expiră la {{ formatLocal(inviteJustCreated.expires_at) }} · rol {{ inviteJustCreated.role }}
+            </div>
+          </div>
+
+          <table v-if="invites.length">
+            <thead>
+              <tr>
+                <th>COD</th>
+                <th>ROL</th>
+                <th>CLASĂ</th>
+                <th>MATERIE</th>
+                <th>EXPIRĂ</th>
+                <th>STARE</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="inv in invites" :key="inv.id">
+                <td class="mono code-cell" @click="copyCode(inv.code)">{{ inv.code }}</td>
+                <td>{{ inv.role }}</td>
+                <td>{{ inv.class ? inv.class.name : '-' }}</td>
+                <td>{{ inv.subject ? inv.subject.name : '-' }}</td>
+                <td>{{ formatLocal(inv.expires_at) }}</td>
+                <td>
+                  <span v-if="inv.revoked" class="muted">revocat</span>
+                  <span v-else-if="inv.used_at" class="muted">folosit</span>
+                  <span v-else style="color:#2a9d2a">activ</span>
+                </td>
+                <td>
+                  <button v-if="!inv.revoked && !inv.used_at" class="btn-mini-revoke"
+                          @click="revokeInvite(inv.id)">Revocă</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="empty">Niciun cod activ.</p>
         </section>
 
         <!-- observation list -->
@@ -386,6 +519,32 @@ tr.dismissed { opacity: 0.5; }
 }
 .btn-action:hover { background: #134d87; }
 .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.invite-form {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center;
+}
+.invite-input {
+  padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px;
+  font-family: 'Inter', sans-serif; font-size: 13px; min-width: 140px;
+}
+.just-created {
+  background: #e8f2ff; border: 1px solid #185FA5; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px;
+}
+.big-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 18px;
+  font-weight: 700; color: #185FA5; letter-spacing: 0.1em; cursor: pointer;
+}
+.copy-hint { font-size: 11px; color: #555; margin-left: 8px; font-weight: 400; letter-spacing: normal; }
+.code-cell {
+  cursor: pointer; color: #185FA5; font-weight: 700;
+}
+.code-cell:hover { background: #f0f0f0; }
+.btn-mini-revoke {
+  background: #cc0000; color: white; border: none; border-radius: 4px;
+  padding: 4px 10px; cursor: pointer; font-size: 11px; font-weight: 700;
+}
+.btn-mini-revoke:hover { background: #a00000; }
 
 .perf-body { padding: 4px 0; }
 .rows { display: flex; gap: 16px; font-size: 12px; color: #555; margin-bottom: 10px; }

@@ -50,3 +50,5 @@ src/backend/certs/
 src/backend/proelev.db
 src/backend/chat.json
 src/backend/__pycache__/
+**/__pycache__/
+*.pyc

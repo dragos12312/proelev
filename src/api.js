@@ -431,9 +431,12 @@ export const auth = {
     verifyQuestion:  (challenge_id, answer) =>
         request('POST', '/auth/login/verify-question', { challenge_id, answer }),
 
-    register: (name, email, password, security_question, security_answer) =>
+    // assignment 6, register can take an invite code + role-specific extras.
+    // `extras` is an object that may contain invite_code, class_id, subject_id,
+    // children_emails. without it the new account is plain "user".
+    register: (name, email, password, security_question, security_answer, extras = {}) =>
         request('POST', '/auth/register', {
-            name, email, password, security_question, security_answer,
+            name, email, password, security_question, security_answer, ...extras,
         }),
     me:      () => request('GET',  '/auth/me'),
     logout:  () => request('POST', '/auth/logout'),
@@ -441,6 +444,65 @@ export const auth = {
 
     forgot:  (email)              => request('POST', '/auth/forgot', { email }),
     reset:   (token, new_password) => request('POST', '/auth/reset',  { token, new_password }),
+
+    // assignment 6, pre-flight check on the invite code so the register form
+    // can show which role the user is about to assume
+    checkInvite: (code) => _json('/auth/invite/check?code=' + encodeURIComponent(code)),
+}
+
+// public lookups used by the register form before the user has a token
+export const lookups = {
+    classes:  () => _json('/lookups/classes'),
+    subjects: () => _json('/lookups/subjects'),
+}
+
+// assignment 6, admin invite code management
+export const invitesApi = {
+    list:    (includeExpired = false, includeUsed = false) =>
+        _json(`/admin/invites?include_expired=${includeExpired}&include_used=${includeUsed}`),
+    create:  (payload) => _json('/admin/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }),
+    revoke:  (id) => _json(`/admin/invites/${id}/revoke`, { method: 'POST' }),
+}
+
+
+// assignment 6, student submissions + teacher grading
+export const submissionsApi = {
+    // student uploads, multipart so we can attach a file
+    submit: async (homeworkId, text, file) => {
+        const fd = new FormData()
+        if (text) fd.append('text', text)
+        if (file) fd.append('file', file)
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/homeworks/${homeworkId}/submit`, {
+            method: 'POST',
+            headers: {
+                ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                'ngrok-skip-browser-warning': 'true',
+            },
+            body: fd,
+        })
+        _handleSessionHeaders(res)
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        return res.json()
+    },
+    grade:  (homeworkId, studentId, payload) =>
+        _json(`/homeworks/${homeworkId}/students/${studentId}/grade`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        }),
+    list:   (homeworkId, page = 1, pageSize = 100) =>
+        _json(`/homeworks/${homeworkId}/students?page=${page}&pageSize=${pageSize}`),
+    fileUrl: (homeworkId, studentId) =>
+        `${BASE}/homeworks/${homeworkId}/students/${studentId}/file`,
 }
 
 // all the homework routes, used by pretty much every view

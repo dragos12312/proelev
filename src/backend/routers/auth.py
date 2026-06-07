@@ -36,8 +36,10 @@ from schemas import (
 from database import get_db
 from models import (
     User, Role, LoginChallenge, PasswordReset, Session as UserSession,
-    ROLE_USER, ROLE_ADMIN,
+    InviteCode, teacher_assignment, parent_child, SchoolClass, Subject,
+    ROLE_USER, ROLE_ADMIN, ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
 )
+from routers.invites import consume_invite
 from auth import (
     hash_password, verify_password,
     issue_session_token, decode_token, revoke_session,
@@ -52,13 +54,45 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def _safe_user(u: User) -> dict:
-    return {
+    """Build the user payload sent to the frontend.
+    Always include id/email/name/role/permissions.
+    For students attach `class`, for parents `children`, for teachers
+    `assignments` = list of (class, subject) pairs they teach."""
+    out = {
         "id":          u.id,
         "email":       u.email,
         "name":        u.name,
         "role":        u.role.name if u.role else None,
         "permissions": sorted(p.code for p in u.role.permissions) if u.role else [],
     }
+    if u.school_class:
+        out["class"] = {"id": u.school_class.id, "name": u.school_class.name}
+    if u.children:
+        out["children"] = [
+            {"id": c.id, "email": c.email, "name": c.name,
+             "class": {"id": c.school_class.id, "name": c.school_class.name} if c.school_class else None}
+            for c in u.children
+        ]
+    # teacher: list of (class, subject) pairs they're assigned to
+    from sqlalchemy.orm import object_session
+    sess = object_session(u)
+    if sess is not None:
+        from sqlalchemy import select
+        from models import teacher_assignment as _ta, SchoolClass as _SC, Subject as _SU
+        rows = sess.execute(
+            select(_ta.c.class_id, _ta.c.subject_id).where(_ta.c.user_id == u.id)
+        ).all()
+        if rows:
+            pairs = []
+            for cls_id, sub_id in rows:
+                cl = sess.get(_SC, cls_id)
+                su = sess.get(_SU, sub_id)
+                pairs.append({
+                    "class":   {"id": cl.id, "name": cl.name} if cl else None,
+                    "subject": {"id": su.id, "name": su.name} if su else None,
+                })
+            out["assignments"] = pairs
+    return out
 
 
 def _now():
@@ -72,21 +106,95 @@ def register(body: RegisterRequest, db: DbSession = Depends(get_db)):
     if db.query(User).filter_by(email=body.email).first():
         raise HTTPException(status_code=409, detail="Există deja un cont cu acest email")
 
-    user_role = db.query(Role).filter_by(name=ROLE_USER).first()
-    if not user_role:
-        raise HTTPException(status_code=500, detail="Rolul USER lipsește din baza de date")
+    # ── resolve target role ───────────────────────────────────────────────
+    # without an invite code the new account stays the legacy "user" role for
+    # backward compat. with a code the code's role wins, and any preset class
+    # or subject must be honored.
+    invite: InviteCode | None = None
+    target_role_name = ROLE_USER
+    preset_class_id: int | None = None
+    preset_subject_id: int | None = None
+    if body.invite_code:
+        inv = db.query(InviteCode).filter_by(code=body.invite_code.strip().upper()).first()
+        if not inv:
+            raise HTTPException(status_code=400, detail="Cod de invitație invalid")
+        if inv.revoked:
+            raise HTTPException(status_code=400, detail="Codul a fost revocat")
+        if inv.used_by_user_id:
+            raise HTTPException(status_code=400, detail="Codul a fost deja folosit")
+        if inv.expires_at < _now():
+            raise HTTPException(status_code=400, detail="Codul a expirat")
+        invite = inv
+        target_role_name  = inv.role_name
+        preset_class_id   = inv.class_id
+        preset_subject_id = inv.subject_id
 
+    target_role = db.query(Role).filter_by(name=target_role_name).first()
+    if not target_role:
+        raise HTTPException(status_code=500, detail=f"Rolul {target_role_name} lipsește din baza de date")
+
+    # ── role-specific input validation ───────────────────────────────────
+    if target_role_name == ROLE_STUDENT:
+        cls_id = preset_class_id or body.class_id
+        if not cls_id:
+            raise HTTPException(status_code=400, detail="Elevii trebuie să aibă o clasă")
+        if not db.get(SchoolClass, cls_id):
+            raise HTTPException(status_code=400, detail="Clasa nu există")
+    elif target_role_name == ROLE_TEACHER:
+        cls_id = preset_class_id or body.class_id
+        sub_id = preset_subject_id or body.subject_id
+        if not cls_id or not sub_id:
+            raise HTTPException(status_code=400, detail="Profesorii trebuie să aibă o clasă și o materie")
+        if not db.get(SchoolClass, cls_id):
+            raise HTTPException(status_code=400, detail="Clasa nu există")
+        if not db.get(Subject, sub_id):
+            raise HTTPException(status_code=400, detail="Materia nu există")
+    elif target_role_name == ROLE_PARENT:
+        emails = [e.strip().lower() for e in (body.children_emails or []) if e and e.strip()]
+        if not emails:
+            raise HTTPException(status_code=400, detail="Părinții trebuie să aibă cel puțin un copil")
+        # all child emails must point at existing student users
+        children = db.query(User).filter(User.email.in_(emails)).all()
+        if len(children) != len(emails):
+            missing = set(emails) - {c.email for c in children}
+            raise HTTPException(status_code=400, detail=f"Nu am găsit conturi pentru: {', '.join(sorted(missing))}")
+        non_students = [c.email for c in children if not c.role or c.role.name != ROLE_STUDENT]
+        if non_students:
+            raise HTTPException(status_code=400, detail=f"Aceste conturi nu sunt elevi: {', '.join(non_students)}")
+
+    # ── create the row ───────────────────────────────────────────────────
     user = User(
         email=body.email,
         name=body.name,
         password_hash=hash_password(body.password),
-        role_id=user_role.id,
+        role_id=target_role.id,
         security_question=body.security_question,
-        # the answer is normalized to lowercase + stripped so users dont fail
-        # the demo just because they capitalize differently next time
         security_answer_hash=hash_password(body.security_answer.strip().lower()),
+        class_id=(preset_class_id or body.class_id) if target_role_name == ROLE_STUDENT else None,
     )
     db.add(user)
+    db.flush()
+
+    # ── wire up role-specific relations ──────────────────────────────────
+    if target_role_name == ROLE_TEACHER:
+        cls_id = preset_class_id or body.class_id
+        sub_id = preset_subject_id or body.subject_id
+        db.execute(teacher_assignment.insert().values(
+            user_id=user.id, class_id=cls_id, subject_id=sub_id,
+        ))
+    elif target_role_name == ROLE_PARENT:
+        emails = [e.strip().lower() for e in (body.children_emails or [])]
+        children = db.query(User).filter(User.email.in_(emails)).all()
+        for ch in children:
+            db.execute(parent_child.insert().values(
+                parent_user_id=user.id, child_user_id=ch.id,
+            ))
+
+    # ── consume the invite ──────────────────────────────────────────────
+    if invite is not None:
+        invite.used_by_user_id = user.id
+        invite.used_at = _now()
+
     db.commit()
     db.refresh(user)
 
