@@ -17,6 +17,9 @@ import InboxView from '../views/InboxView.vue'
 import NotificationsView from '../views/NotificationsView.vue'
 import CatalogView from '../views/CatalogView.vue'
 import OrarView from '../views/OrarView.vue'
+import AttendanceView from '../views/AttendanceView.vue'
+import ChannelsView from '../views/ChannelsView.vue'
+import CalendarView from '../views/CalendarView.vue'
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -105,6 +108,26 @@ const router = createRouter({
             path: '/orar',
             name: 'orar',
             component: OrarView,
+        },
+        {
+            path: '/attendance',
+            name: 'attendance',
+            component: AttendanceView,
+        },
+        {
+            path: '/channels',
+            name: 'channels',
+            component: ChannelsView,
+        },
+        {
+            path: '/channels/:classId/:subjectId',
+            name: 'channel-detail',
+            component: ChannelsView,
+        },
+        {
+            path: '/calendar',
+            name: 'calendar',
+            component: CalendarView,
         },
     ]
 })

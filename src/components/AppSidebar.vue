@@ -27,9 +27,12 @@ defineProps({
 const items = computed(() => {
   const base = [
     { key: 'notificari', label: 'NOTIFICĂRI', icon: bell, route: '/notifications' },
+    { key: 'anunturi',   label: 'ANUNȚURI',   icon: message, route: '/channels' },
     { key: 'mesaje',     label: 'MESAJE',     icon: message, route: '/messages' },
     { key: 'orar',       label: 'ORAR',       icon: calendar, route: '/orar' },
+    { key: 'calendar',   label: 'CALENDAR',   icon: calendar, route: '/calendar' },
     { key: 'teme',       label: 'TEME',       icon: book, route: '/homeworks' },
+    { key: 'prezenta',   label: 'PREZENȚĂ',   icon: notebook, route: '/attendance' },
     { key: 'catalog',    label: 'CATALOG',    icon: notebook, route: '/catalog' },
   ]
   if (isAdmin()) {

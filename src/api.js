@@ -735,6 +735,81 @@ export const notificationsApi = {
         _json('/notifications/read_all', { method: 'POST' }),
 }
 
+// PREZENȚĂ (attendance) helpers
+export const attendanceApi = {
+    teacherClasses: () => _json('/attendance/teacher/classes'),
+    roster: (classId) => _json(`/attendance/roster/${classId}`),
+    listForClass: (classId, dateStr) =>
+        _json(`/attendance/class/${classId}${dateStr ? `?date=${dateStr}` : ''}`),
+    bulkMark: (classId, dateStr, marks) =>
+        _json('/attendance/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ classId, date: dateStr, marks }),
+        }),
+    mine: () => _json('/attendance/me'),
+}
+
+// ANUNȚURI (subject channels, MS Teams style)
+export const channelsApi = {
+    mine: () => _json('/channels/mine'),
+    feed: (classId, subjectId) => _json(`/channels/${classId}/${subjectId}`),
+    postText: async (classId, subjectId, text) => {
+        const fd = new FormData()
+        fd.append('text', text)
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/channels/${classId}/${subjectId}/post`, {
+            method: 'POST',
+            headers: { ...(t ? { 'Authorization': `Bearer ${t}` } : {}), 'ngrok-skip-browser-warning': 'true' },
+            body: fd,
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        return res.json()
+    },
+    uploadFile: async (classId, subjectId, file) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/channels/${classId}/${subjectId}/file`, {
+            method: 'POST',
+            headers: { ...(t ? { 'Authorization': `Bearer ${t}` } : {}), 'ngrok-skip-browser-warning': 'true' },
+            body: fd,
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        return res.json()
+    },
+    downloadFile: async (postId, suggestedName = 'fisier') => {
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/channels/post/${postId}/file`, {
+            headers: { ...(t ? { 'Authorization': `Bearer ${t}` } : {}), 'ngrok-skip-browser-warning': 'true' },
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        let filename = suggestedName
+        const cd = res.headers.get('Content-Disposition') || ''
+        const m = cd.match(/filename="?([^"]+)"?/)
+        if (m) filename = m[1]
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    },
+    deletePost: (postId) => _json(`/channels/post/${postId}`, { method: 'DELETE' }),
+}
+
 // CATALOG (gradebook) feed, server picks the shape per role
 export const gradebookApi = {
     mine: () => _json('/gradebook'),

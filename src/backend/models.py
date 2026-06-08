@@ -333,6 +333,59 @@ class ActionLog(Base):
     )
 
 
+# assignment 6 polish, daily attendance. one row per (class, student, day).
+# unique constraint keeps the teacher from accidentally marking the same kid
+# twice for the same morning. status is "present" / "absent" / "late" /
+# "excused" — kept as a string so we don't burn a migration on new states.
+class Attendance(Base):
+    __tablename__ = "attendance"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    class_id          = Column(Integer, ForeignKey("school_class.id", ondelete="CASCADE"), nullable=False)
+    student_user_id   = Column(Integer, ForeignKey("user.id",         ondelete="CASCADE"), nullable=False)
+    date              = Column(Date,    nullable=False)
+    status            = Column(String(20), nullable=False)
+    note              = Column(String(255), nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at        = Column(DateTime, nullable=False)
+
+    school_class = relationship("SchoolClass", foreign_keys=[class_id])
+    student      = relationship("User",        foreign_keys=[student_user_id])
+    created_by   = relationship("User",        foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("class_id", "student_user_id", "date", name="uq_attendance_class_student_date"),
+        Index("ix_attendance_class_date",   "class_id",        "date"),
+        Index("ix_attendance_student_date", "student_user_id", "date"),
+    )
+
+
+# assignment 6 polish, MS-Teams-style per-(class, subject) channel with two
+# kinds of rows: text posts ("post") and resource files ("file"). everyone
+# enrolled in that (class, subject) can read; teachers + admins can post
+# and upload, students can post but not upload, parents are read-only.
+class SubjectChannelPost(Base):
+    __tablename__ = "subject_channel_post"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    class_id        = Column(Integer, ForeignKey("school_class.id", ondelete="CASCADE"), nullable=False)
+    subject_id      = Column(Integer, ForeignKey("subject.id",      ondelete="CASCADE"), nullable=False)
+    author_user_id  = Column(Integer, ForeignKey("user.id",         ondelete="SET NULL"), nullable=True)
+    kind            = Column(String(10),  nullable=False)   # "post" or "file"
+    text            = Column(Text,        nullable=True)
+    file_name       = Column(String(255), nullable=True)
+    file_blob       = Column(LargeBinary, nullable=True)
+    created_at      = Column(DateTime,    nullable=False)
+
+    school_class = relationship("SchoolClass", foreign_keys=[class_id])
+    subject      = relationship("Subject",     foreign_keys=[subject_id])
+    author       = relationship("User",        foreign_keys=[author_user_id])
+
+    __table_args__ = (
+        Index("ix_channel_post_channel_created", "class_id", "subject_id", "created_at"),
+    )
+
+
 # assignment 6, per-user notifications. one row per event delivered to one
 # recipient (so a single homework triggers N rows, one per student + parent).
 # read_at is null until the user clicks it / marks all read.
