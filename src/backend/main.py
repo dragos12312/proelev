@@ -6,7 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 
-from routers import homeworks, students, auth, generator, comments, chat, admin, heavy_stats, invites, lookups, gradebook, timetable, attendance, channels
+from routers import homeworks, students, auth, generator, comments, chat, admin, heavy_stats, invites, lookups, gradebook, timetable, attendance, channels, tests_router
 import notifications
 from graphql_schema import schema as gql_schema
 from database import SessionLocal
@@ -79,6 +79,7 @@ app.include_router(gradebook.router,      prefix="/gradebook",     tags=["Gradeb
 app.include_router(timetable.router,      prefix="/timetable",     tags=["Timetable"])
 app.include_router(attendance.router,     prefix="/attendance",    tags=["Attendance"])
 app.include_router(channels.router,       prefix="/channels",      tags=["Channels"])
+app.include_router(tests_router.router,   prefix="/tests",         tags=["Tests"])
 
 # graphql lives under /graphql, same store as the rest endpoints
 graphql_app = GraphQLRouter(gql_schema)

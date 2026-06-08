@@ -735,6 +735,34 @@ export const notificationsApi = {
         _json('/notifications/read_all', { method: 'POST' }),
 }
 
+// TESTE (formal tests) — teacher announces + grades, students see own grades,
+// big-improvement splash polls the pending feed
+export const testsApi = {
+    list:           () => _json('/tests'),
+    detail:    (id) => _json(`/tests/${id}`),
+    myAssignments: () => _json('/tests/lookups/my_assignments'),
+    create: (payload) =>
+        _json('/tests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        }),
+    gradeOne: (testId, payload) =>
+        _json(`/tests/${testId}/grade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        }),
+    gradeBulk: (testId, grades) =>
+        _json(`/tests/${testId}/grade_bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grades }),
+        }),
+    pendingImprovements: () => _json('/tests/improvements/pending'),
+    ackImprovement: (id) => _json(`/tests/improvements/${id}/ack`, { method: 'POST' }),
+}
+
 // PREZENȚĂ (attendance) helpers
 export const attendanceApi = {
     teacherClasses: () => _json('/attendance/teacher/classes'),

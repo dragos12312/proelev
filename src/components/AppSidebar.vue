@@ -32,6 +32,7 @@ const items = computed(() => {
     { key: 'orar',       label: 'ORAR',       icon: calendar, route: '/orar' },
     { key: 'calendar',   label: 'CALENDAR',   icon: calendar, route: '/calendar' },
     { key: 'teme',       label: 'TEME',       icon: book, route: '/homeworks' },
+    { key: 'teste',      label: 'TESTE',      icon: test, route: '/tests' },
     { key: 'prezenta',   label: 'PREZENȚĂ',   icon: notebook, route: '/attendance' },
     { key: 'catalog',    label: 'CATALOG',    icon: notebook, route: '/catalog' },
   ]

@@ -360,6 +360,81 @@ class Attendance(Base):
     )
 
 
+# assignment 6 polish, formal tests (separate from homeworks). A teacher
+# announces a test for a (class, subject) pair on a given date (which is
+# allowed to be in the past so the contest demo can show "the last test was
+# 3 weeks ago, the new one is today"). Each student gets a TestGrade row
+# once the teacher fills it in.
+class Test(Base):
+    __tablename__ = "test"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    class_id        = Column(Integer, ForeignKey("school_class.id", ondelete="CASCADE"), nullable=False)
+    subject_id      = Column(Integer, ForeignKey("subject.id",      ondelete="CASCADE"), nullable=False)
+    title           = Column(String(200), nullable=False)
+    description     = Column(Text, nullable=True)
+    scheduled_date  = Column(Date, nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at      = Column(DateTime, nullable=False)
+
+    school_class = relationship("SchoolClass", foreign_keys=[class_id])
+    subject      = relationship("Subject",     foreign_keys=[subject_id])
+    created_by   = relationship("User",        foreign_keys=[created_by_user_id])
+    grades       = relationship("TestGrade", back_populates="test",
+                                cascade="all, delete-orphan", passive_deletes=True)
+
+    __table_args__ = (
+        Index("ix_test_class_subject_date", "class_id", "subject_id", "scheduled_date"),
+    )
+
+
+class TestGrade(Base):
+    __tablename__ = "test_grade"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    test_id            = Column(Integer, ForeignKey("test.id", ondelete="CASCADE"), nullable=False)
+    student_user_id    = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    grade              = Column(Integer, nullable=True)
+    feedback           = Column(Text,    nullable=True)
+    graded_by_user_id  = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    graded_at          = Column(DateTime, nullable=True)
+
+    test    = relationship("Test", back_populates="grades", foreign_keys=[test_id])
+    student = relationship("User", foreign_keys=[student_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("test_id", "student_user_id", name="uq_test_grade_test_student"),
+        CheckConstraint("grade IS NULL OR (grade >= 1 AND grade <= 10)", name="ck_test_grade_range"),
+        Index("ix_test_grade_student", "student_user_id"),
+    )
+
+
+# A "big improvement" event — recorded when a fresh test grade is at least
+# 3 points higher than the student's previous test grade in the same subject.
+# The splash component polls for unack'd rows; once the student dismisses
+# the splash, ack_at is set so it never fires again.
+class TestImprovement(Base):
+    __tablename__ = "test_improvement"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    student_user_id    = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    subject_id         = Column(Integer, ForeignKey("subject.id", ondelete="CASCADE"), nullable=False)
+    previous_test_id   = Column(Integer, ForeignKey("test.id", ondelete="SET NULL"), nullable=True)
+    new_test_id        = Column(Integer, ForeignKey("test.id", ondelete="CASCADE"), nullable=False)
+    old_grade          = Column(Integer, nullable=False)
+    new_grade          = Column(Integer, nullable=False)
+    created_at         = Column(DateTime, nullable=False)
+    ack_at             = Column(DateTime, nullable=True)
+
+    student = relationship("User",    foreign_keys=[student_user_id])
+    subject = relationship("Subject", foreign_keys=[subject_id])
+    new_test = relationship("Test",   foreign_keys=[new_test_id])
+
+    __table_args__ = (
+        Index("ix_test_improvement_student_ack", "student_user_id", "ack_at"),
+    )
+
+
 # assignment 6 polish, MS-Teams-style per-(class, subject) channel with two
 # kinds of rows: text posts ("post") and resource files ("file"). everyone
 # enrolled in that (class, subject) can read; teachers + admins can post

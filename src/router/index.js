@@ -20,6 +20,7 @@ import OrarView from '../views/OrarView.vue'
 import AttendanceView from '../views/AttendanceView.vue'
 import ChannelsView from '../views/ChannelsView.vue'
 import CalendarView from '../views/CalendarView.vue'
+import TesteView from '../views/TesteView.vue'
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -128,6 +129,11 @@ const router = createRouter({
             path: '/calendar',
             name: 'calendar',
             component: CalendarView,
+        },
+        {
+            path: '/tests',
+            name: 'tests',
+            component: TesteView,
         },
     ]
 })
