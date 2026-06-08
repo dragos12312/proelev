@@ -735,6 +735,64 @@ export const notificationsApi = {
         _json('/notifications/read_all', { method: 'POST' }),
 }
 
+// CATALOG (gradebook) feed, server picks the shape per role
+export const gradebookApi = {
+    mine: () => _json('/gradebook'),
+}
+
+// ORAR (timetable) feed, optionally filtered by class for admins/teachers
+export const timetableApi = {
+    get: (className) => _json(`/timetable${className ? `?class=${encodeURIComponent(className)}` : ''}`),
+}
+
+// homework attachment, teacher uploads after creating, anyone with read
+// access on the homework can download
+export const homeworkAttachmentApi = {
+    upload: async (homeworkId, file) => {
+        const fd = new FormData()
+        fd.append('file', file)
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/homeworks/${homeworkId}/attachment`, {
+            method: 'POST',
+            headers: {
+                ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                'ngrok-skip-browser-warning': 'true',
+            },
+            body: fd,
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        return res.json()
+    },
+    download: async (homeworkId, suggestedName = 'tema') => {
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/homeworks/${homeworkId}/attachment`, {
+            headers: {
+                ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                'ngrok-skip-browser-warning': 'true',
+            },
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        let filename = suggestedName
+        const cd = res.headers.get('Content-Disposition') || ''
+        const m = cd.match(/filename="?([^"]+)"?/)
+        if (m) filename = m[1]
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    },
+}
+
 // assignment 5 gold, heavy compute stat + perf demo
 export const statsApi = {
     byTag:    (mode = 'naive') => _json(`/stats/by-tag?mode=${mode}`),

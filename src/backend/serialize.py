@@ -17,6 +17,7 @@ def homework_to_dict(hw: Homework) -> dict:
         "dueDate":       hw.due_date.isoformat() if hw.due_date else None,
         "description":   hw.description,
         "fileName":      hw.file_name,
+        "hasFile":       bool(hw.file_blob),
     }
 
 

@@ -107,6 +107,10 @@ class Homework(Base):
     due_date    = Column(Date, nullable=False)
     description = Column(String, nullable=True)
     file_name   = Column(String(255), nullable=True)
+    # assignment 6, the actual bytes of the attached file (pdf/image) so it
+    # survives Render's ephemeral filesystem. null when the teacher didn't
+    # attach anything.
+    file_blob   = Column(LargeBinary, nullable=True)
     # assignment 6, the teacher who posted this homework, null for legacy / admin posts
     created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
 

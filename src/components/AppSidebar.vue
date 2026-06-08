@@ -26,12 +26,11 @@ defineProps({
 // every active item routes to its own page, no modal anywhere
 const items = computed(() => {
   const base = [
-    { key: 'notificari', label: 'NOTIFICĂRI', icon: bell, route: null },
+    { key: 'notificari', label: 'NOTIFICĂRI', icon: bell, route: '/notifications' },
     { key: 'mesaje',     label: 'MESAJE',     icon: message, route: '/messages' },
-    { key: 'orar',       label: 'ORAR',       icon: calendar, route: null },
-    { key: 'teste',      label: 'TESTE',      icon: test, route: null },
+    { key: 'orar',       label: 'ORAR',       icon: calendar, route: '/orar' },
     { key: 'teme',       label: 'TEME',       icon: book, route: '/homeworks' },
-    { key: 'catalog',    label: 'CATALOG',    icon: notebook, route: null },
+    { key: 'catalog',    label: 'CATALOG',    icon: notebook, route: '/catalog' },
   ]
   if (isAdmin()) {
     base.push({ key: 'admin', label: 'ADMIN', icon: bell, route: '/admin' })

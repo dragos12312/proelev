@@ -6,7 +6,7 @@ import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
-import { homeworksApi } from '../api.js'
+import { homeworksApi, homeworkAttachmentApi } from '../api.js'
 import { currentUser } from '../utils/auth.js'
 
 const router = useRouter()
@@ -140,10 +140,21 @@ async function submit() {
   }
 
   try {
+    let hw
     if (isEdit.value) {
-      await homeworksApi.update(parseInt(route.params.id), payload)
+      hw = await homeworksApi.update(parseInt(route.params.id), payload)
     } else {
-      await homeworksApi.create(payload)
+      hw = await homeworksApi.create(payload)
+    }
+    // if the teacher actually picked a file, upload the bytes too. we do this
+    // as a second request so the create response doesn't have to be multipart.
+    if (form.value.file && hw?.id) {
+      try {
+        await homeworkAttachmentApi.upload(hw.id, form.value.file)
+      } catch (e) {
+        apiError.value = `Tema a fost salvată, dar atașamentul nu a putut fi încărcat: ${e.message}`
+        return
+      }
     }
     router.push('/homeworks')
   } catch (e) {

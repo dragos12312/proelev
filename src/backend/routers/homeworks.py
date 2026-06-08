@@ -2,7 +2,8 @@
 # user only sees the homeworks their role allows.
 import random
 from datetime import datetime, date
-from fastapi import APIRouter, HTTPException, Query, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File, Response
 from sqlalchemy.orm import Session
 
 from schemas import (
@@ -201,6 +202,49 @@ def update_homework(
     db.commit()
     db.refresh(hw)
     return homework_to_dict(hw)
+
+
+# homework attachment, teacher uploads bytes after creating the homework so
+# that students can download the PDF/image the teacher prepared
+MAX_HOMEWORK_FILE_BYTES = 2 * 1024 * 1024  # 2 MB
+
+@router.post("/{hw_id}/attachment")
+async def upload_attachment(
+    hw_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    hw = _find_homework(db, hw_id)
+    if not can_grade_homework(db, user, hw):
+        raise HTTPException(status_code=403, detail="Doar autorul temei poate atașa un fișier")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Niciun fișier")
+    blob = await file.read()
+    if len(blob) > MAX_HOMEWORK_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Fișierul este prea mare (max 2 MB)")
+    hw.file_blob = blob
+    hw.file_name = file.filename
+    db.commit()
+    return {"ok": True, "fileName": file.filename, "size": len(blob)}
+
+
+@router.get("/{hw_id}/attachment")
+def download_attachment(
+    hw_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    hw = _find_homework(db, hw_id)
+    if not can_see_homework(db, user, hw):
+        raise HTTPException(status_code=403, detail="Nu ai acces la această temă")
+    if not hw.file_blob:
+        raise HTTPException(status_code=404, detail="Tema nu are fișier atașat")
+    return Response(
+        content=hw.file_blob,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{hw.file_name or "tema"}"'},
+    )
 
 
 # deleting a homework cascades to students and comments thanks to the FK ondelete

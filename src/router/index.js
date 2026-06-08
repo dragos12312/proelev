@@ -14,6 +14,9 @@ import AdminPanelView from '../views/AdminPanelView.vue'
 import MessagesView from '../views/MessagesView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import InboxView from '../views/InboxView.vue'
+import NotificationsView from '../views/NotificationsView.vue'
+import CatalogView from '../views/CatalogView.vue'
+import OrarView from '../views/OrarView.vue'
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -87,6 +90,21 @@ const router = createRouter({
             path: '/messages',
             name: 'messages',
             component: MessagesView,
+        },
+        {
+            path: '/notifications',
+            name: 'notifications',
+            component: NotificationsView,
+        },
+        {
+            path: '/catalog',
+            name: 'catalog',
+            component: CatalogView,
+        },
+        {
+            path: '/orar',
+            name: 'orar',
+            component: OrarView,
         },
     ]
 })

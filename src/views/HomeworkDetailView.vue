@@ -7,7 +7,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
 import { setCookie, getCookie, deleteCookie } from '../utils/cookies.js'
-import { homeworksApi, fetchAllStudents, commentsApi, submissionsApi } from '../api.js'
+import { homeworksApi, fetchAllStudents, commentsApi, submissionsApi, homeworkAttachmentApi } from '../api.js'
 import { hasPerm, currentUser as authUser } from '../utils/auth.js'
 
 // only admins/teachers can edit a homework, the comment crud stays available to all logged in users
@@ -102,6 +102,14 @@ function cancelGrade(s) {
 async function downloadSubmission(s) {
   try {
     await submissionsApi.downloadFile(id.value, s.id, s.submissionFileName || `tema-${s.name || s.id}`)
+  } catch (e) {
+    alert(e.message || 'Eroare la descărcare')
+  }
+}
+
+async function downloadHomeworkAttachment() {
+  try {
+    await homeworkAttachmentApi.download(id.value, homework.value?.fileName || `tema-${id.value}`)
   } catch (e) {
     alert(e.message || 'Eroare la descărcare')
   }
@@ -278,6 +286,11 @@ function goToStats() {
             <span><b>Termen:</b> {{ homework.dueDate }}</span>
           </div>
           <div v-if="homework.description" class="hw-desc">{{ homework.description }}</div>
+          <div v-if="homework.hasFile" class="hw-attach">
+            <button class="btn-attach" @click="downloadHomeworkAttachment">
+              📎 Descarcă fișierul atașat ({{ homework.fileName || 'fișier' }})
+            </button>
+          </div>
         </div>
 
         <!-- parent view, read-only per-child status, grade, feedback -->
@@ -548,6 +561,13 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;
   font-size: 13px; color: #444; white-space: pre-wrap;
 }
+.hw-attach { margin-top: 10px; }
+.btn-attach {
+  background: #185FA5; color: white; border: none; padding: 8px 16px;
+  border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700;
+  font-family: 'Inter', sans-serif;
+}
+.btn-attach:hover { background: #134d87; }
 
 /* parent view card */
 .parent-card {
