@@ -2,8 +2,10 @@
 # called from main.py and from the test fixtures, all idempotent
 from sqlalchemy.orm import Session
 
+from datetime import date, datetime, timedelta
+
 from models import (
-    Subject, SchoolClass, Role, Permission, User,
+    Subject, SchoolClass, Role, Permission, User, Homework, Student,
     teacher_assignment, parent_child,
     SUBJECT_NAMES, CLASS_NAMES, PERMISSIONS, ROLE_PERMISSIONS, DEMO_USERS,
     ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
@@ -67,6 +69,11 @@ def seed_lookups(db: Session) -> None:
 
     db.commit()
 
+    # ── contest demo content: a few homeworks + submissions + grades so the
+    # judges see a populated app without having to click anything. only seeds
+    # when the homework table is empty so it never duplicates.
+    _maybe_seed_demo_content(db)
+
 
 def existing_classes_by_name(db: Session) -> dict[str, SchoolClass]:
     return {c.name: c for c in db.query(SchoolClass).all()}
@@ -119,3 +126,78 @@ def _wire_demo_relations(db: Session, classes: dict, subjects: dict) -> None:
             db.execute(parent_child.insert().values(
                 parent_user_id=parinte.id, child_user_id=elev.id,
             ))
+
+
+def _maybe_seed_demo_content(db: Session) -> None:
+    """If the homework table is empty (fresh deploy on Render), drop in a
+    realistic demo: three homeworks posted by prof@ to Matematică 4A, one
+    already graded (elev got 9), one submitted but pending grade, and one
+    upcoming. Only runs when the table is empty so we don't keep duplicating
+    on every cold start."""
+    if db.query(Homework).count() > 0:
+        return
+
+    prof = db.query(User).filter_by(email="prof@proelev.ro").first()
+    elev = db.query(User).filter_by(email="elev@proelev.ro").first()
+    classes  = existing_classes_by_name(db)
+    subjects = existing_subjects_by_name(db)
+    cls_4a = classes.get("4A")
+    math   = subjects.get("Matematică")
+    if not (prof and elev and cls_4a and math):
+        return
+
+    today = date.today()
+    seed_homeworks = [
+        {
+            "title": "Exerciții cu fracții ordinare",
+            "description": "Rezolvă exercițiile 1-12 din culegere. Atenție la simplificare.",
+            "due": today - timedelta(days=3),     # already past, graded
+            "state": "graded",
+            "grade": 9, "feedback": "Foarte bine! Atenție la pasul 2.",
+            "submission": "Am rezolvat toate exercițiile, am atașat fotografia caietului.",
+        },
+        {
+            "title": "Probleme de geometrie - triunghiuri",
+            "description": "Capitol nou. Rezolvă problemele de la pag. 48-49 și fii pregătit pentru discuție.",
+            "due": today + timedelta(days=2),     # current, submitted but ungraded
+            "state": "submitted",
+            "submission": "Trimis mai devreme, vă rog să verificați triunghiul B.",
+        },
+        {
+            "title": "Test recapitulativ - unități de măsură",
+            "description": "Pregătire pentru testul de săptămâna viitoare. Citește tot capitolul.",
+            "due": today + timedelta(days=7),     # upcoming, not yet submitted
+            "state": "open",
+        },
+    ]
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    for hw_data in seed_homeworks:
+        hw = Homework(
+            title=hw_data["title"],
+            subject_id=math.id,
+            class_id=cls_4a.id,
+            due_date=hw_data["due"],
+            description=hw_data["description"],
+            created_by_user_id=prof.id,
+        )
+        db.add(hw)
+        db.flush()
+
+        # always create the student row for elev so the demo parent sees
+        # something on the gradebook even before clicking
+        s = Student(
+            homework_id=hw.id,
+            user_id=elev.id,
+            name=elev.name,
+            date_time=now_str,
+        )
+        if hw_data["state"] in ("submitted", "graded"):
+            s.submitted_at    = datetime.utcnow() - timedelta(days=1)
+            s.submission_text = hw_data["submission"]
+        if hw_data["state"] == "graded":
+            s.grade    = hw_data["grade"]
+            s.feedback = hw_data["feedback"]
+        db.add(s)
+
+    db.commit()
