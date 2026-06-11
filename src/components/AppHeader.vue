@@ -1,16 +1,29 @@
 <script setup>
-// top bar that every logged in page reuses, just the logo and the title
-// the toast notification mounts here so dms pop up on any page
+// top bar that every logged in page reuses, the logo and the title.
+// clicking the brand (logo + title block) navigates to /main which shows
+// the subject card grid. the toast notification mounts here so dms pop
+// up on any page.
+import { useRouter } from 'vue-router'
 import logo from '../assets/logo.png'
 import ChatNotification from './ChatNotification.vue'
+
+const router = useRouter()
+
+function goHome() {
+  // only navigate if we're not already on the subjects view
+  if (router.currentRoute.value.path !== '/main') router.push('/main')
+}
 </script>
 
 <template>
   <div class="header">
-    <img :src="logo" alt="ProElev Logo" class="logo" />
-    <div class="title-block">
-      <h1 class="title">ProElev</h1>
-      <p class="tagline">Perseverența duce la reușite!</p>
+    <div class="brand" role="button" tabindex="0"
+         @click="goHome" @keyup.enter="goHome" aria-label="Acasă">
+      <img :src="logo" alt="ProElev Logo" class="logo" />
+      <div class="title-block">
+        <h1 class="title">ProElev</h1>
+        <p class="tagline">Perseverența duce la reușite!</p>
+      </div>
     </div>
     <ChatNotification />
   </div>
@@ -29,6 +42,21 @@ import ChatNotification from './ChatNotification.vue'
   overflow: hidden;
   position: relative;
 }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 2vw, 16px);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: opacity 0.1s;
+}
+.brand:hover { opacity: 0.85; }
+.brand:active { opacity: 0.7; }
+.brand:focus-visible { outline: 2px solid #185FA5; outline-offset: 4px; border-radius: 6px; }
 
 .logo {
   position: relative;
