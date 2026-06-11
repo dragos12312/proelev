@@ -345,4 +345,17 @@ tbody tr:last-child td { border-bottom: none; }
 .grade-cell.pass { background: #d4edda; color: #155724; }
 .grade-cell.fail { background: #f5d6d6; color: #842029; }
 .grade-cell.no-grade { background: #f0f0f0; color: #888; }
+
+@media (max-width: 700px) {
+  table th, table td { padding: 6px 4px; }
+  .st-name { width: auto; font-size: 12px; }
+  .test-list { grid-template-columns: 1fr; }
+  /* drop the feedback column to free space on narrow phones */
+  table th:nth-child(3), table td:nth-child(3) { display: none; }
+}
+@media (max-width: 480px) {
+  .detail-head h3 { font-size: 13px; }
+  .feedback-input, .grade-input { font-size: 13px; }
+  .btn-row { padding: 4px 8px; font-size: 11px; }
+}
 </style>

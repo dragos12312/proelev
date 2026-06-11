@@ -276,4 +276,21 @@ function subjColor(s) { return SUBJECT_COLOR[s] || '#cfd8e3' }
 .day-main { flex: 1; min-width: 0; }
 .day-title { font-weight: 700; color: #185FA5; font-size: 13px; }
 .day-meta  { font-size: 11px; color: #888; margin-top: 2px; }
+
+@media (max-width: 700px) {
+  .cal-cell { padding: 4px; min-height: 64px; }
+  .cell-num { font-size: 11px; }
+  .ev-dot { font-size: 9px; padding: 1px 4px; }
+  .nav .title { min-width: 110px; font-size: 13px; }
+  .nav button { padding: 4px 10px; font-size: 13px; }
+}
+@media (max-width: 480px) {
+  .cal-row.head .cal-cell.head { padding: 6px 2px; font-size: 10px; }
+  /* only show one event chip per cell, plus "+N" if more */
+  .cal-cell { min-height: 52px; }
+  .ev-dot:nth-child(n+2) { display: none; }
+  .ev-more { font-size: 9px; }
+  /* day panel is below the grid (already via 900px breakpoint) — tighten it */
+  .day-panel { padding: 10px; }
+}
 </style>

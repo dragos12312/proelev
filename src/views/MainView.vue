@@ -90,4 +90,10 @@ function openSubject(s) {
   transition: background-color 0.2s, transform 0.1s;
 }
 .card:hover { background-color: #dde8f5; transform: translateY(-2px); }
+
+@media (max-width: 480px) {
+  /* keep aspect ratio square but give the text room to breathe */
+  .main { padding-top: 16px; }
+  .card { font-size: 13px; padding: 10px; }
+}
 </style>

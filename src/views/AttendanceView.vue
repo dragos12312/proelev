@@ -290,4 +290,21 @@ tbody tr:last-child td { border-bottom: none; }
 
 .child-block { margin-bottom: 24px; }
 .child-block h3 { color: #185FA5; margin: 0 0 10px; font-size: 15px; }
+
+@media (max-width: 700px) {
+  table.roster .st-name { width: auto; font-size: 12px; }
+  /* drop the note column to free horizontal space */
+  table.roster th:nth-child(3), table.roster td:nth-child(3) { display: none; }
+  .pill { padding: 6px 10px; font-size: 11px; }
+}
+@media (max-width: 480px) {
+  .pills { flex-direction: column; align-items: stretch; }
+  .pill { text-align: center; }
+  table.roster th, table.roster td { padding: 6px 4px; }
+  table.self  th, table.self  td { padding: 6px 4px; font-size: 12px; }
+  .toolbar { gap: 8px; }
+  .toolbar select, .toolbar input { font-size: 13px; }
+  .summary { gap: 6px; }
+  .chip { padding: 4px 10px; font-size: 11px; }
+}
 </style>

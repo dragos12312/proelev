@@ -243,4 +243,17 @@ tbody tr:hover { background: #f5faff; cursor: pointer; }
 }
 .badge.ok { background: #d4edda; color: #155724; }
 .badge.no { background: #f5d6d6; color: #842029; }
+
+@media (max-width: 700px) {
+  .block-header { gap: 8px; }
+  .avg-pill { font-size: 12px; padding: 4px 10px; }
+  .head-name { font-size: 14px; }
+  th, td { padding: 6px 4px; font-size: 11px; }
+  /* drop feedback column on mobile, it's the widest */
+  th:last-child, td:last-child { display: none; }
+}
+@media (max-width: 480px) {
+  /* student/parent table: hide due-date column too */
+  th:nth-child(3), td:nth-child(3) { display: none; }
+}
 </style>

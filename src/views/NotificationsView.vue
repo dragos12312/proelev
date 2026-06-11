@@ -186,4 +186,16 @@ onMounted(reload)
 .notif-title { font-weight: 700; color: #185FA5; font-size: 14px; }
 .notif-body  { color: #444; font-size: 13px; margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
 .notif-time  { color: #888; font-size: 12px; flex-shrink: 0; align-self: center; }
+
+@media (max-width: 700px) {
+  .filters button { padding: 5px 10px; font-size: 12px; }
+  .notif-row { padding: 8px 10px; gap: 8px; }
+  .kind-tag { font-size: 10px; padding: 2px 6px; }
+  .notif-title { font-size: 13px; }
+  .notif-body  { font-size: 12px; }
+}
+@media (max-width: 480px) {
+  .notif-row { flex-direction: column; align-items: flex-start; }
+  .notif-time { align-self: flex-end; font-size: 11px; }
+}
 </style>

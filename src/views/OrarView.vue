@@ -163,4 +163,16 @@ td.today { box-shadow: 0 0 0 2px #2a9d2a40; }
 .subj { font-weight: 700; color: #333; font-size: 13px; }
 .teach { font-size: 11px; color: #555; margin-top: 4px; }
 .free { color: #ccc; font-size: 18px; }
+
+@media (max-width: 700px) {
+  .switcher { font-size: 13px; }
+  table.grid { border-spacing: 4px; }
+  th { padding: 6px 4px; font-size: 11px; }
+  td { padding: 6px 4px; min-width: 90px; }
+  .subj { font-size: 11px; }
+  .teach { font-size: 10px; }
+  .time-col { min-width: 60px; }
+  .p-num { font-size: 14px; }
+  .p-time { font-size: 9px; }
+}
 </style>

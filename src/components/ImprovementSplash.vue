@@ -211,4 +211,18 @@ h1 {
 /* transition on the overlay itself */
 .splash-enter-active, .splash-leave-active { transition: opacity 0.25s ease; }
 .splash-enter-from, .splash-leave-to { opacity: 0; }
+
+@media (max-width: 480px) {
+  .splash-card { padding: 22px 18px; border-radius: 16px; }
+  .big-emoji { font-size: 50px; }
+  h1 { font-size: 20px; }
+  .subj { font-size: 13px; margin-bottom: 14px; }
+  .grades { gap: 14px; margin: 8px 0; }
+  .g-num { width: 80px; font-size: 50px; border-radius: 12px; }
+  .arrow { font-size: 30px; }
+  .delta { font-size: 13px; padding: 5px 14px; }
+  .test-title { font-size: 11px; margin: 4px 0 18px; }
+  .btn-ok { padding: 10px 28px; font-size: 14px; }
+  .confetti { width: 6px; height: 10px; }
+}
 </style>

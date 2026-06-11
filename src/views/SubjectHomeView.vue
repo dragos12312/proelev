@@ -604,4 +604,28 @@ table.roster td, table.self td { padding: 10px; border-bottom: 1px solid #f0f3f7
 .chip.st-excused { background: #e0e0e0; color: #444; }
 .child-block { margin-bottom: 24px; }
 .child-block h3 { color: #185FA5; margin: 0 0 10px; font-size: 15px; }
+
+/* ── mobile ────────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .tabs button { padding: 8px 10px; font-size: 12px; }
+  .tabs button .emoji { display: none; }
+  .title-row h2 { font-size: 20px; }
+  .att-toolbar { gap: 8px; }
+  /* roster table → make the name column small, drop the note column */
+  table.roster .st-name { width: auto; font-size: 12px; }
+  table.roster th:nth-child(3), table.roster td:nth-child(3) { display: none; }
+  .pill { padding: 6px 10px; font-size: 11px; min-height: 32px; }
+}
+@media (max-width: 480px) {
+  .tabs { gap: 2px; }
+  .tabs button { padding: 6px 8px; font-size: 11px; flex: 1 1 auto; }
+  /* roster → stack pills vertically so the row stays readable */
+  .pills { flex-direction: column; align-items: stretch; }
+  .pill { text-align: center; }
+  table.roster th, table.roster td { padding: 6px 4px; }
+  table.self th, table.self td { padding: 6px 4px; font-size: 12px; }
+  .summary { gap: 6px; }
+  .chip { padding: 4px 10px; font-size: 11px; }
+  .composer textarea { font-size: 14px; }   /* avoid iOS zoom on focus */
+}
 </style>

@@ -625,4 +625,21 @@ tr:hover { background-color: #f0f0f0; cursor: pointer; }
 .btn-link:hover { color: #134d87; }
 .btn-del, .btn-cancel { background-color: #c94040; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: clamp(10px, 1.1vw, 12px); font-weight: 700; font-family: 'Inter', sans-serif; }
 .btn-del:hover, .btn-cancel:hover { background-color: #a82828; }
+
+@media (max-width: 700px) {
+  .toolbar { gap: 8px; }
+  .hw-meta { gap: 8px; font-size: 12px; }
+  .hw-desc { font-size: 12px; }
+  .btn-attach { padding: 6px 12px; font-size: 12px; }
+  table th, table td { padding: 6px 4px; font-size: 11px; }
+  .submit-card textarea { font-size: 14px; }
+  .child-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .child-name { min-width: auto; }
+  .feedback-input { font-size: 13px; }
+}
+@media (max-width: 480px) {
+  .right { width: 100%; }
+  .right button { flex: 1 1 auto; }
+  .comments-wrapper { padding: 10px; }
+}
 </style>
