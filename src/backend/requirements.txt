@@ -20,3 +20,5 @@ scikit-learn>=1.4.0
 numpy>=1.26.0
 # assignment 6, FastAPI needs python-multipart for UploadFile / Form parsing
 python-multipart>=0.0.9
+# assignment 6 polish, used by /gradebook/export.pdf
+reportlab>=4.0.0

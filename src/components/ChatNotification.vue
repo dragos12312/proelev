@@ -31,7 +31,11 @@ async function openIt() {
 <template>
   <transition name="toast">
     <div v-if="visible && lastNotification" class="toast" @click="openIt">
-      <div class="dot">m</div>
+      <div class="dot">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M20 4H4a2 2 0 00-2 2v10a2 2 0 002 2h3l3 3 3-3h7a2 2 0 002-2V6a2 2 0 00-2-2z" fill="#185FA5"/>
+        </svg>
+      </div>
       <div class="body">
         <div class="title">Mesaj nou de la {{ lastNotification.message.author_name }}</div>
         <div class="text">{{ lastNotification.message.text }}</div>

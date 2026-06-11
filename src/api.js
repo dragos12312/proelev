@@ -882,6 +882,26 @@ export const channelsApi = {
 // CATALOG (gradebook) feed, server picks the shape per role
 export const gradebookApi = {
     mine: () => _json('/gradebook'),
+    exportPdf: async () => {
+        const t = sessionStorage.getItem('authToken')
+        const res = await fetch(`${BASE}/gradebook/export.pdf`, {
+            headers: {
+                ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                'ngrok-skip-browser-warning': 'true',
+            },
+        })
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`
+            try { detail = (await res.json()).detail || detail } catch {}
+            throw new Error(detail)
+        }
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = 'catalog.pdf'
+        document.body.appendChild(a); a.click(); a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    },
 }
 
 // ORAR (timetable) feed, optionally filtered by class for admins/teachers

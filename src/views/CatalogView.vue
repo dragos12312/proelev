@@ -43,6 +43,18 @@ function fmtGrade(g) {
   if (g === null || g === undefined) return '—'
   return g
 }
+
+const exporting = ref(false)
+async function exportPdf() {
+  exporting.value = true
+  try {
+    await gradebookApi.exportPdf()
+  } catch (e) {
+    errMsg.value = e.message || 'Eroare la export'
+  } finally {
+    exporting.value = false
+  }
+}
 </script>
 
 <template>
@@ -52,7 +64,12 @@ function fmtGrade(g) {
     <div class="content">
       <AppSidebar active="catalog" />
       <div class="main">
-        <h2 class="page-title">CATALOG</h2>
+        <div class="title-row">
+          <h2 class="page-title">CATALOG</h2>
+          <button class="btn-export" :disabled="exporting" @click="exportPdf">
+            {{ exporting ? 'Se exportă...' : 'Exportă PDF' }}
+          </button>
+        </div>
 
         <div v-if="loading" class="muted">Se încarcă...</div>
         <div v-else-if="errMsg" class="api-error">{{ errMsg }}</div>
@@ -243,7 +260,15 @@ function fmtGrade(g) {
   padding-right: clamp(40px, 6vw, 80px);
   font-family: 'Inter', sans-serif;
 }
-.page-title { font-size: clamp(18px, 3vw, 24px); color: #185FA5; font-weight: 700; margin-bottom: 16px; }
+.title-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.page-title { font-size: clamp(18px, 3vw, 24px); color: #185FA5; font-weight: 700; margin: 0; }
+.btn-export {
+  background: #185FA5; color: white; border: none; padding: 8px 18px;
+  border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif;
+  font-weight: 700; font-size: 13px;
+}
+.btn-export:hover:not(:disabled) { background: #134d87; }
+.btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 .muted { color: #888; padding: 20px 0; }
 .api-error { background: #ffe5e5; color: #cc0000; border: 1px solid #cc0000; border-radius: 8px; padding: 10px 16px; margin: 8px 0; }
 

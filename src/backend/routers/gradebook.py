@@ -9,7 +9,8 @@ CATALOG (gradebook) router. Returns the right slice of grades per role:
 
 This wraps existing Homework/Student rows; no new tables required.
 """
-from fastapi import APIRouter, HTTPException, Depends
+import io
+from fastapi import APIRouter, HTTPException, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -214,3 +215,138 @@ def my_gradebook(
         return {"viewKind": "admin", "blocks": _admin_view(db)}
 
     raise HTTPException(status_code=403, detail="Rolul tău nu are catalog")
+
+
+@router.get("/export.pdf")
+def export_pdf(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Render the same role-aware catalog into a printable PDF.
+
+    Layout: title line, "generat la / pentru", then per role:
+      student   -> one big table of (subject, tema, dată, notă)
+                   followed by Teste table and Media la purtare line
+      parent    -> the same for each child
+      teacher   -> per-block summary: (class, subject), N teme, class avg
+      admin     -> same as teacher
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, PageBreak,
+    )
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from datetime import datetime as _dt
+
+    role = user.role.name if user.role else None
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=1.5*cm, rightMargin=1.5*cm,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+    styles = getSampleStyleSheet()
+    flow = []
+
+    def _hdr(text, level=0):
+        s = styles["Heading1"] if level == 0 else styles["Heading3"]
+        flow.append(Paragraph(text, s))
+
+    def _p(text):
+        flow.append(Paragraph(text, styles["BodyText"]))
+
+    def _table(rows, header=True):
+        if not rows: return
+        t = Table(rows, hAlign="LEFT")
+        ts = [
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID",     (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+            ("VALIGN",   (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING",   (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+        ]
+        if header:
+            ts += [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#185FA5")),
+                ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+                ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]
+        t.setStyle(TableStyle(ts))
+        flow.append(t)
+        flow.append(Spacer(1, 0.3*cm))
+
+    _hdr("CATALOG ProElev")
+    _p(f"Generat la {_dt.now().strftime('%Y-%m-%d %H:%M')}")
+    _p(f"Pentru: <b>{user.name}</b> ({role})")
+    flow.append(Spacer(1, 0.4*cm))
+
+    def _student_block(data: dict):
+        cls_name = data.get("class", {}).get("name") if data.get("class") else "—"
+        _hdr(f"{data.get('name')} — Clasa {cls_name}", level=1)
+        avg = data.get("average")
+        _p(f"Media generală: <b>{avg if avg is not None else '—'}</b>")
+        rows = [["Materie", "Tema", "Termen", "Trimisă", "Notă"]]
+        for r in data.get("rows", []):
+            rows.append([
+                r.get("subject") or "", r.get("title") or "",
+                r.get("dueDate") or "",
+                "Da" if r.get("submitted") else "Nu",
+                str(r.get("grade")) if r.get("grade") is not None else "—",
+            ])
+        if len(rows) > 1: _table(rows)
+        if data.get("tests"):
+            _hdr("Teste", level=1)
+            trows = [["Materie", "Test", "Dată", "Notă"]]
+            for t in data["tests"]:
+                trows.append([
+                    t.get("subject") or "", t.get("title") or "",
+                    t.get("date") or "",
+                    str(t.get("grade")) if t.get("grade") is not None else "—",
+                ])
+            _table(trows)
+        if data.get("behavior"):
+            b = data["behavior"]
+            _p(f"<b>Media la purtare</b> ({b.get('period')}): {b.get('grade')}")
+            if b.get("note"):
+                _p(f"<i>{b['note']}</i>")
+        flow.append(Spacer(1, 0.4*cm))
+
+    if role == ROLE_STUDENT:
+        _student_block(_student_view(db, user))
+    elif role == ROLE_PARENT:
+        for c in user.children:
+            _student_block(_student_view(db, c))
+            flow.append(PageBreak())
+    elif role == ROLE_TEACHER:
+        blocks = _teacher_view(db, user)
+        for b in blocks:
+            cls = b.get("class") or {}
+            sub = b.get("subject") or {}
+            _hdr(f"{cls.get('name', '—')} · {sub.get('name', '—')}", level=1)
+            _p(f"{len(b.get('homeworks', []))} teme, {len(b.get('students', []))} elevi"
+               f", media clasei: {b.get('classAverage') if b.get('classAverage') is not None else '—'}")
+            rows = [["Elev", "Medie"]]
+            for st in b.get("students", []):
+                rows.append([st.get("name") or "",
+                             str(st.get("average")) if st.get("average") is not None else "—"])
+            _table(rows)
+    elif role in (ROLE_ADMIN, ROLE_USER):
+        blocks = _admin_view(db)
+        for b in blocks:
+            cls = b.get("class") or {}
+            sub = b.get("subject") or {}
+            _hdr(f"{cls.get('name', '—')} · {sub.get('name', '—')}", level=1)
+            _p(f"{len(b.get('homeworks', []))} teme, {len(b.get('students', []))} elevi"
+               f", media clasei: {b.get('classAverage') if b.get('classAverage') is not None else '—'}")
+    else:
+        _p("Rolul tău nu are catalog.")
+
+    doc.build(flow)
+    pdf_bytes = buf.getvalue()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="catalog.pdf"'},
+    )

@@ -71,11 +71,10 @@ async function makeRoom() {
 
 function backToList() { mobileScreen.value = 'list' }
 
-function roomMark(r) {
-  // tiny tag instead of an emoji to keep things text-only
-  if (r.type === 'global') return 'gl'
+function roomKind(r) {
+  if (r.type === 'global') return 'global'
   if (r.type === 'dm')     return 'dm'
-  return '#'
+  return 'group'
 }
 </script>
 
@@ -101,7 +100,20 @@ function roomMark(r) {
               <li v-for="r in rooms" :key="r.id"
                   :class="{ active: activeRoom && activeRoom.id === r.id }"
                   @click="pickRoom(r)">
-                <span class="room-tag">{{ roomMark(r) }}</span>
+                <!-- inline SVG by room kind -->
+                <svg v-if="roomKind(r) === 'global'" class="room-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+                  <path d="M3 12h18 M12 3 a14 14 0 010 18 M12 3 a14 14 0 000 18"
+                        fill="none" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+                <svg v-else-if="roomKind(r) === 'dm'" class="room-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M20 4H4a2 2 0 00-2 2v10a2 2 0 002 2h3l3 3 3-3h7a2 2 0 002-2V6a2 2 0 00-2-2z"
+                        fill="currentColor"/>
+                </svg>
+                <svg v-else class="room-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 4v16M15 4v16M4 9h16M4 15h16"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
                 <span class="room-name">{{ r.name }}</span>
               </li>
             </ul>
@@ -192,12 +204,12 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 .room-list li:hover, .user-list li:hover { background: #f0f0f0; }
 .room-list li.active { background: #e0ecf8; color: #185FA5; font-weight: 600; }
-.room-tag {
-  min-width: 22px; padding: 2px 6px; border-radius: 4px;
-  background: #185FA5; color: white;
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  text-align: center;
+.room-ico {
+  width: 18px; height: 18px;
+  color: #185FA5;
+  flex-shrink: 0;
 }
+.room-list li.active .room-ico { color: #134d87; }
 .room-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.admin { background: #cc0000; }
