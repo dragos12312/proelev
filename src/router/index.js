@@ -21,6 +21,7 @@ import AttendanceView from '../views/AttendanceView.vue'
 import ChannelsView from '../views/ChannelsView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import TesteView from '../views/TesteView.vue'
+import SubjectHomeView from '../views/SubjectHomeView.vue'
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -134,6 +135,11 @@ const router = createRouter({
             path: '/tests',
             name: 'tests',
             component: TesteView,
+        },
+        {
+            path: '/subject/:subjectId',
+            name: 'subject-home',
+            component: SubjectHomeView,
         },
     ]
 })
