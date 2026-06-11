@@ -39,10 +39,10 @@ class TestAttendance:
     def test_teacher_marks_and_student_reads(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         classes = client.get("/attendance/teacher/classes", headers=_h(tok)).json()
-        # explicitly pick 4A since that's the only class with a real seeded student
         cls_id = next(c["id"] for c in classes if c["name"] == "4A")
         roster = client.get(f"/attendance/roster/{cls_id}", headers=_h(tok)).json()
-        student_id = roster[0]["userId"]
+        # pick the specific elev@proelev.ro row (the demo seed adds extras)
+        student_id = next(s["userId"] for s in roster if s["email"] == "elev@proelev.ro")
 
         r = client.post("/attendance/bulk", headers=_h(tok), json={
             "classId": cls_id, "date": "2026-06-08",
@@ -68,7 +68,7 @@ class TestAttendance:
         classes = client.get("/attendance/teacher/classes", headers=_h(tok)).json()
         cls_id = next(c["id"] for c in classes if c["name"] == "4A")
         roster = client.get(f"/attendance/roster/{cls_id}", headers=_h(tok)).json()
-        student_id = roster[0]["userId"]
+        student_id = next(s["userId"] for s in roster if s["email"] == "elev@proelev.ro")
 
         client.post("/attendance/bulk", headers=_h(tok), json={
             "classId": cls_id, "date": "2026-06-09",

@@ -360,6 +360,47 @@ class Attendance(Base):
     )
 
 
+# assignment 6 polish, "media la purtare" — Romanian schools track a
+# behavior grade alongside academic grades. one row per (student, period);
+# period is a free-form string like "Semestrul 1 2025-2026" so we don't
+# burn migrations later.
+class BehaviorGrade(Base):
+    __tablename__ = "behavior_grade"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    student_user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    period          = Column(String(64), nullable=False)
+    grade           = Column(Integer, nullable=False)
+    note            = Column(Text, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at      = Column(DateTime, nullable=False)
+
+    student    = relationship("User", foreign_keys=[student_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("student_user_id", "period", name="uq_behavior_grade_student_period"),
+        CheckConstraint("grade >= 1 AND grade <= 10", name="ck_behavior_grade_range"),
+    )
+
+
+# School-wide announcement. Admin (or "user" legacy role) posts one and it
+# fans out to every page header / dashboard. Distinct from per-channel
+# anunțuri which are scoped to (class, subject).
+class SchoolAnnouncement(Base):
+    __tablename__ = "school_announcement"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    title           = Column(String(200), nullable=False)
+    body            = Column(Text, nullable=True)
+    kind            = Column(String(20), nullable=False, default="info")  # info/warning/event
+    created_by_user_id = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at      = Column(DateTime, nullable=False)
+    pinned          = Column(Integer, nullable=False, default=1)  # 0 archived, 1 visible
+
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+
 # assignment 6 polish, formal tests (separate from homeworks). A teacher
 # announces a test for a (class, subject) pair on a given date (which is
 # allowed to be in the past so the contest demo can show "the last test was

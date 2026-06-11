@@ -735,6 +735,47 @@ export const notificationsApi = {
         _json('/notifications/read_all', { method: 'POST' }),
 }
 
+// Profile / account settings
+export const profileApi = {
+    updateName: (name) =>
+        _json('/auth/profile/name', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        }),
+    updatePassword: (current_password, new_password) =>
+        _json('/auth/profile/password', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password, new_password }),
+        }),
+    updateSecurity: (current_password, security_question, security_answer) =>
+        _json('/auth/profile/security', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password, security_question, security_answer }),
+        }),
+}
+
+// Note de purtare (behavior grades)
+export const behaviorApi = {
+    mine:        () => _json('/behavior/me'),
+    listForClass: (classId) => _json(`/behavior/class/${classId}`),
+    set: (studentUserId, period, grade, note) =>
+        _json('/behavior', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ studentUserId, period, grade, note }),
+        }),
+}
+
+// Anunțuri generale (school-wide)
+export const schoolAnnouncementsApi = {
+    list: () => _json('/school-announcements'),
+    create: (title, body, kind = 'info') =>
+        _json('/school-announcements', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, body, kind }),
+        }),
+    archive: (id) => _json(`/school-announcements/${id}`, { method: 'DELETE' }),
+}
+
 // TESTE (formal tests) — teacher announces + grades, students see own grades,
 // big-improvement splash polls the pending feed
 export const testsApi = {

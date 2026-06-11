@@ -22,6 +22,7 @@ import ChannelsView from '../views/ChannelsView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import TesteView from '../views/TesteView.vue'
 import SubjectHomeView from '../views/SubjectHomeView.vue'
+import ProfileView from '../views/ProfileView.vue'
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -140,6 +141,11 @@ const router = createRouter({
             path: '/subject/:subjectId',
             name: 'subject-home',
             component: SubjectHomeView,
+        },
+        {
+            path: '/profile',
+            name: 'profile',
+            component: ProfileView,
         },
     ]
 })

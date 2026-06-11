@@ -87,6 +87,37 @@ function fmtGrade(g) {
             </tbody>
           </table>
           <div v-else class="muted">Nu ai încă teme.</div>
+
+          <!-- TESTE -->
+          <h4 class="sect-title" v-if="data.data.tests && data.data.tests.length > 0">Teste</h4>
+          <table v-if="data.data.tests && data.data.tests.length > 0">
+            <thead>
+              <tr><th>Materie</th><th>Test</th><th>Dată</th><th>Notă</th><th>Feedback</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in data.data.tests" :key="t.testId">
+                <td>{{ t.subject }}</td>
+                <td>{{ t.title }}</td>
+                <td>{{ t.date }}</td>
+                <td><span :class="['grade-cell', gradeClass(t.grade)]">{{ fmtGrade(t.grade) }}</span></td>
+                <td class="feedback-cell">{{ t.feedback || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- PURTARE -->
+          <div v-if="data.data.behavior" class="behavior-card">
+            <h4 class="sect-title">Media la purtare</h4>
+            <div class="beh-row">
+              <span class="beh-period">{{ data.data.behavior.period }}</span>
+              <span :class="['grade-cell', gradeClass(data.data.behavior.grade)]">
+                {{ data.data.behavior.grade }}
+              </span>
+            </div>
+            <div v-if="data.data.behavior.note" class="beh-note">
+              {{ data.data.behavior.note }}
+            </div>
+          </div>
         </div>
 
         <!-- ── PARENT view: one block per child ──────────────────────── -->
@@ -103,7 +134,7 @@ function fmtGrade(g) {
                 <b>{{ child.average !== null ? child.average : '—' }}</b>
               </div>
             </div>
-            <table v-if="child.rows.length > 0">
+            <table v-if="child.rows && child.rows.length > 0">
               <thead>
                 <tr><th>Materie</th><th>Tema</th><th>Termen</th><th>Trimisă</th><th>Notă</th><th>Feedback</th></tr>
               </thead>
@@ -119,6 +150,37 @@ function fmtGrade(g) {
               </tbody>
             </table>
             <div v-else class="muted">Niciun catalog pentru acest copil încă.</div>
+
+            <!-- per-child tests -->
+            <h4 class="sect-title" v-if="child.tests && child.tests.length > 0">Teste</h4>
+            <table v-if="child.tests && child.tests.length > 0">
+              <thead>
+                <tr><th>Materie</th><th>Test</th><th>Dată</th><th>Notă</th><th>Feedback</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in child.tests" :key="t.testId">
+                  <td>{{ t.subject }}</td>
+                  <td>{{ t.title }}</td>
+                  <td>{{ t.date }}</td>
+                  <td><span :class="['grade-cell', gradeClass(t.grade)]">{{ fmtGrade(t.grade) }}</span></td>
+                  <td class="feedback-cell">{{ t.feedback || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- per-child behavior -->
+            <div v-if="child.behavior" class="behavior-card">
+              <h4 class="sect-title">Media la purtare</h4>
+              <div class="beh-row">
+                <span class="beh-period">{{ child.behavior.period }}</span>
+                <span :class="['grade-cell', gradeClass(child.behavior.grade)]">
+                  {{ child.behavior.grade }}
+                </span>
+              </div>
+              <div v-if="child.behavior.note" class="beh-note">
+                {{ child.behavior.note }}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -243,6 +305,15 @@ tbody tr:hover { background: #f5faff; cursor: pointer; }
 }
 .badge.ok { background: #d4edda; color: #155724; }
 .badge.no { background: #f5d6d6; color: #842029; }
+
+.sect-title { color: #185FA5; margin: 14px 0 8px; font-size: 13px; text-transform: uppercase; }
+.behavior-card {
+  margin-top: 14px; background: #fff9eb; border: 1px solid #f1e3b6;
+  border-radius: 10px; padding: 10px 14px;
+}
+.beh-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.beh-period { font-weight: 700; color: #7a4d00; font-size: 13px; }
+.beh-note   { font-size: 12px; color: #555; margin-top: 6px; font-style: italic; }
 
 @media (max-width: 700px) {
   .block-header { gap: 8px; }

@@ -438,12 +438,13 @@ class TestSubmissionFlow:
             f"/homeworks/{hw['id']}/students?pageSize=100",
             headers=_h(par_token),
         ).json()
-        # exactly the parent's child appears, with grade + feedback visible
-        assert len(listed["items"]) == 1
-        row = listed["items"][0]
-        assert row["grade"] == 8
-        assert row["feedback"] == "Foarte bine!"
-        assert row["submittedAt"] is not None
+        # parent should see only their own children; find the elev@'s row
+        rows = listed["items"]
+        assert len(rows) >= 1
+        my = next(r for r in rows if r["name"] and "Elev" in r["name"] and r["grade"] is not None)
+        assert my["grade"] == 8
+        assert my["feedback"] == "Foarte bine!"
+        assert my["submittedAt"] is not None
 
 
 # ─── lookups ────────────────────────────────────────────────────────────

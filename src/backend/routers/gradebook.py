@@ -16,6 +16,7 @@ from sqlalchemy import select
 from database import get_db
 from models import (
     Homework, Student, User, SchoolClass, Subject, teacher_assignment,
+    Test, TestGrade, BehaviorGrade,
     ROLE_ADMIN, ROLE_USER, ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
 )
 from auth import get_current_user
@@ -25,9 +26,10 @@ router = APIRouter()
 
 
 def _student_view(db: Session, student_user: User) -> dict:
-    """Every homework the student has a row on, with their grade + feedback."""
+    """Every homework + test the student has a row on, plus their behavior
+    grade. Average combines both homework and test grades."""
     if student_user.class_id is None:
-        return {"name": student_user.name, "class": None, "rows": []}
+        return {"name": student_user.name, "class": None, "rows": [], "tests": [], "behavior": None}
 
     rows = (
         db.query(Student, Homework)
@@ -50,14 +52,55 @@ def _student_view(db: Session, student_user: User) -> dict:
         })
         if s.grade is not None:
             grades_only.append(s.grade)
+
+    # test grades for this student
+    test_rows = (
+        db.query(TestGrade, Test)
+        .join(Test, TestGrade.test_id == Test.id)
+        .filter(TestGrade.student_user_id == student_user.id)
+        .order_by(Test.scheduled_date.desc(), Test.id.desc())
+        .all()
+    )
+    tests_out = []
+    for tg, t in test_rows:
+        tests_out.append({
+            "testId":    t.id,
+            "title":     t.title,
+            "subject":   t.subject.name if t.subject else None,
+            "date":      t.scheduled_date.isoformat() if t.scheduled_date else None,
+            "grade":     tg.grade,
+            "feedback":  tg.feedback,
+        })
+        if tg.grade is not None:
+            grades_only.append(tg.grade)
+
     avg = round(sum(grades_only) / len(grades_only), 2) if grades_only else None
+
+    # most recent behavior grade
+    beh = (
+        db.query(BehaviorGrade)
+        .filter(BehaviorGrade.student_user_id == student_user.id)
+        .order_by(BehaviorGrade.created_at.desc())
+        .first()
+    )
+    behavior_payload = None
+    if beh:
+        behavior_payload = {
+            "id":     beh.id,
+            "period": beh.period,
+            "grade":  beh.grade,
+            "note":   beh.note,
+        }
+
     cls = student_user.school_class
     return {
-        "userId":  student_user.id,
-        "name":    student_user.name,
-        "class":   {"id": cls.id, "name": cls.name} if cls else None,
-        "average": avg,
-        "rows":    out,
+        "userId":   student_user.id,
+        "name":     student_user.name,
+        "class":    {"id": cls.id, "name": cls.name} if cls else None,
+        "average":  avg,
+        "rows":     out,
+        "tests":    tests_out,
+        "behavior": behavior_payload,
     }
 
 

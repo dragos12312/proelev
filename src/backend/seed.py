@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 
 from models import (
     Subject, SchoolClass, Role, Permission, User, Homework, Student,
+    BehaviorGrade, SchoolAnnouncement, Test, TestGrade,
     teacher_assignment, parent_child,
     SUBJECT_NAMES, CLASS_NAMES, PERMISSIONS, ROLE_PERMISSIONS, DEMO_USERS,
     ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
@@ -127,6 +128,44 @@ def _wire_demo_relations(db: Session, classes: dict, subjects: dict) -> None:
                 parent_user_id=parinte.id, child_user_id=elev.id,
             ))
 
+    # extra demo students in 4A so the roster / catalog look populated
+    student_role = db.query(Role).filter_by(name=ROLE_STUDENT).first()
+    cls_4a = classes.get("4A")
+    extras = [
+        ("elev2@proelev.ro", "Elev1234", "Andrei Popescu"),
+        ("elev3@proelev.ro", "Elev1234", "Maria Ionescu"),
+        ("elev4@proelev.ro", "Elev1234", "Tudor Marin"),
+    ]
+    if student_role and cls_4a:
+        for email, pw, name in extras:
+            existing = db.query(User).filter_by(email=email).first()
+            if not existing:
+                db.add(User(
+                    email=email,
+                    password_hash=hash_password(pw),
+                    name=name,
+                    role_id=student_role.id,
+                    security_question="Care este numele aplicației?",
+                    security_answer_hash=hash_password("proelev"),
+                    class_id=cls_4a.id,
+                ))
+
+    # give the parent a second child in 4A so the multi-child flow shows up
+    db.flush()
+    parinte = db.query(User).filter_by(email="parinte@proelev.ro").first()
+    second_child = db.query(User).filter_by(email="elev2@proelev.ro").first()
+    if parinte and second_child:
+        already = db.execute(
+            parent_child.select().where(
+                parent_child.c.parent_user_id == parinte.id,
+                parent_child.c.child_user_id  == second_child.id,
+            )
+        ).first()
+        if not already:
+            db.execute(parent_child.insert().values(
+                parent_user_id=parinte.id, child_user_id=second_child.id,
+            ))
+
 
 def _maybe_seed_demo_content(db: Session) -> None:
     """If the homework table is empty (fresh deploy on Render), drop in a
@@ -170,6 +209,40 @@ def _maybe_seed_demo_content(db: Session) -> None:
             "state": "open",
         },
     ]
+
+    # a school-wide announcement so the dashboard banner has content
+    admin = db.query(User).filter_by(email="admin@proelev.ro").first()
+    if admin:
+        db.add(SchoolAnnouncement(
+            title="Bun venit pe ProElev!",
+            body="Aceasta este versiunea de demonstrație. Conturile pre-create sunt în pagina de login.",
+            kind="info", created_by_user_id=admin.id,
+            created_at=datetime.utcnow(), pinned=1,
+        ))
+
+    # behavior grade for elev so the catalog has a value to render
+    if prof and elev:
+        db.add(BehaviorGrade(
+            student_user_id=elev.id, period="Semestrul 2 2025-2026",
+            grade=10, note="Foarte implicat la ore.",
+            created_by_user_id=prof.id, created_at=datetime.utcnow(),
+        ))
+
+    # a backdated test + recent test so the improvement splash has data
+    # to trigger on for the demo (delta of 4 → 5 → 9)
+    if prof and elev:
+        t_old = Test(
+            class_id=cls_4a.id, subject_id=math.id,
+            title="Test inițial - fracții", description="Test recapitulativ",
+            scheduled_date=today - timedelta(days=30),
+            created_by_user_id=prof.id, created_at=datetime.utcnow(),
+        )
+        db.add(t_old); db.flush()
+        db.add(TestGrade(
+            test_id=t_old.id, student_user_id=elev.id, grade=5,
+            feedback="Mai exersează simplificarea.",
+            graded_by_user_id=prof.id, graded_at=datetime.utcnow(),
+        ))
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     for hw_data in seed_homeworks:

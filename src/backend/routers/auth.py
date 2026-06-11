@@ -412,6 +412,62 @@ def my_inbox(user: User = Depends(get_current_user)):
     return inbox_for(user.email)
 
 
+from pydantic import BaseModel as _Pyd, Field as _PydField
+
+
+class _UpdateName(_Pyd):
+    name: str = _PydField(min_length=2, max_length=150)
+
+
+class _UpdatePassword(_Pyd):
+    current_password: str
+    new_password:     str = _PydField(min_length=6, max_length=128)
+
+
+class _UpdateSecurity(_Pyd):
+    current_password:    str
+    security_question:   str = _PydField(min_length=4, max_length=255)
+    security_answer:     str = _PydField(min_length=2, max_length=255)
+
+
+@router.put("/profile/name")
+def update_name(
+    body: _UpdateName,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    user.name = body.name.strip()
+    db.commit()
+    return {"ok": True, "name": user.name}
+
+
+@router.put("/profile/password")
+def update_password(
+    body: _UpdatePassword,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Parola actuală este greșită")
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return {"ok": True}
+
+
+@router.put("/profile/security")
+def update_security_question(
+    body: _UpdateSecurity,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Parola actuală este greșită")
+    user.security_question    = body.security_question.strip()
+    user.security_answer_hash = hash_password(body.security_answer.strip().lower())
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/inbox/last")
 def my_last_email(to: str, db: DbSession = Depends(get_db)):
     """Convenience endpoint, anyone can pull the most recent message for a

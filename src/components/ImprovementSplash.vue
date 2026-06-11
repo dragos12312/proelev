@@ -8,6 +8,14 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { testsApi } from '../api.js'
 import { currentUser } from '../utils/auth.js'
 
+// who's looking at the splash decides the headline copy
+const isParent = computed(() => currentUser.value?.role === 'parent')
+const headline = computed(() => isParent.value
+  ? 'Copilul tău a progresat enorm!'
+  : 'Felicitări! Ai progresat enorm!')
+const oldLabel = computed(() => isParent.value ? 'Nota anterioară a copilului' : 'Nota anterioară')
+const newLabel = computed(() => isParent.value ? 'Nota nouă a copilului'      : 'Nota nouă')
+
 const event   = ref(null)
 let   timer   = null
 const POLL_MS = 15000
@@ -68,17 +76,17 @@ const CONFETTI = Array.from({ length: 24 }, (_, i) => ({
            class="confetti" :style="{ left: c.left + '%', background: c.color, animationDelay: c.delay + 's' }"></div>
 
       <div class="splash-card">
-        <h1>Felicitări! Ai progresat enorm!</h1>
+        <h1>{{ headline }}</h1>
         <p class="subj">la <b>{{ event.subjectName }}</b></p>
 
         <div class="grades">
           <div class="g g-old">
-            <div class="g-label">Nota anterioară</div>
+            <div class="g-label">{{ oldLabel }}</div>
             <div class="g-num old">{{ event.oldGrade }}</div>
           </div>
-          <div class="arrow">→</div>
+          <div class="arrow">&rarr;</div>
           <div class="g g-new">
-            <div class="g-label">Nota nouă</div>
+            <div class="g-label">{{ newLabel }}</div>
             <div class="g-num new">{{ event.newGrade }}</div>
           </div>
         </div>

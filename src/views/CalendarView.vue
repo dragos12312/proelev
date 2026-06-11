@@ -7,13 +7,14 @@ import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
-import { homeworksApi } from '../api.js'
+import { homeworksApi, testsApi } from '../api.js'
 
 const router = useRouter()
 
 const today = new Date()
 const cursor = ref(new Date(today.getFullYear(), today.getMonth(), 1))
 const homeworks = ref([])
+const tests = ref([])
 const loading = ref(false)
 const errMsg  = ref('')
 const pickedDay = ref(null)
@@ -22,8 +23,8 @@ const MONTHS = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
                 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
 const DAYS_RO = ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri', 'Sâmbătă', 'Duminică']
 
-// fetch all homeworks (cap at 100 — enough for the demo)
-async function loadHomeworks() {
+// fetch all homeworks + all tests so the grid shows both kinds of events
+async function loadAll() {
   loading.value = true
   errMsg.value  = ''
   try {
@@ -33,12 +34,16 @@ async function loadHomeworks() {
   } catch (e) {
     errMsg.value = e.message || 'Eroare la încărcare'
     homeworks.value = []
-  } finally {
-    loading.value = false
   }
+  try {
+    tests.value = await testsApi.list()
+  } catch {
+    tests.value = []
+  }
+  loading.value = false
 }
 
-onMounted(loadHomeworks)
+onMounted(loadAll)
 
 // monthly grid: 6 rows × 7 cols, starting from Monday of the week containing day 1
 const grid = computed(() => {
@@ -66,18 +71,31 @@ function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const homeworksByDay = computed(() => {
+// fold homework + test events into one per-day list. each event carries a
+// 'kind' so we can color/route differently.
+const eventsByDay = computed(() => {
   const out = {}
   for (const hw of homeworks.value) {
     if (!hw.dueDate) continue
     if (!out[hw.dueDate]) out[hw.dueDate] = []
-    out[hw.dueDate].push(hw)
+    out[hw.dueDate].push({
+      kind: 'homework', id: hw.id, title: hw.title,
+      subject: hw.subject, assignedClass: hw.assignedClass,
+    })
+  }
+  for (const t of tests.value) {
+    if (!t.scheduledDate) continue
+    if (!out[t.scheduledDate]) out[t.scheduledDate] = []
+    out[t.scheduledDate].push({
+      kind: 'test', id: t.id, title: t.title,
+      subject: t.subjectName, assignedClass: t.className,
+    })
   }
   return out
 })
 
-function dayHomeworks(d) {
-  return homeworksByDay.value[ymd(d)] || []
+function dayEvents(d) {
+  return eventsByDay.value[ymd(d)] || []
 }
 
 function inCurrentMonth(d) {
@@ -104,11 +122,14 @@ function goToday() {
 }
 
 function openDay(d) { pickedDay.value = ymd(d) }
-function goHomework(hw) { router.push(`/homeworks/${hw.id}`) }
+function goEvent(ev) {
+  if (ev.kind === 'test') router.push(`/tests`)
+  else                    router.push(`/homeworks/${ev.id}`)
+}
 
-const pickedDayHomeworks = computed(() => {
+const pickedDayEvents = computed(() => {
   if (!pickedDay.value) return []
-  return homeworksByDay.value[pickedDay.value] || []
+  return eventsByDay.value[pickedDay.value] || []
 })
 
 // pastel color per subject so cells are easy to scan
@@ -155,14 +176,14 @@ function subjColor(s) { return SUBJECT_COLOR[s] || '#cfd8e3' }
                    @click="openDay(d)">
                 <div class="cell-num">{{ d.getDate() }}</div>
                 <div class="cell-events">
-                  <div v-for="hw in dayHomeworks(d).slice(0, 3)" :key="hw.id"
-                       class="ev-dot"
-                       :style="{ background: subjColor(hw.subject) }"
-                       :title="`${hw.subject} - ${hw.title}`">
-                    {{ hw.title }}
+                  <div v-for="ev in dayEvents(d).slice(0, 3)" :key="ev.kind + '-' + ev.id"
+                       :class="['ev-dot', { 'ev-test': ev.kind === 'test' }]"
+                       :style="{ background: subjColor(ev.subject) }"
+                       :title="`${ev.kind === 'test' ? 'Test: ' : ''}${ev.subject} - ${ev.title}`">
+                    {{ ev.kind === 'test' ? 'TEST · ' : '' }}{{ ev.title }}
                   </div>
-                  <div v-if="dayHomeworks(d).length > 3" class="ev-more">
-                    +{{ dayHomeworks(d).length - 3 }} mai multe
+                  <div v-if="dayEvents(d).length > 3" class="ev-more">
+                    +{{ dayEvents(d).length - 3 }} mai multe
                   </div>
                 </div>
               </div>
@@ -175,16 +196,20 @@ function subjColor(s) { return SUBJECT_COLOR[s] || '#cfd8e3' }
             </div>
             <div v-else>
               <div class="panel-head">Ziua {{ pickedDay }}</div>
-              <div v-if="pickedDayHomeworks.length === 0" class="muted small">
-                Nicio temă scadentă în această zi.
+              <div v-if="pickedDayEvents.length === 0" class="muted small">
+                Niciun eveniment în această zi.
               </div>
               <div v-else class="day-list">
-                <div v-for="hw in pickedDayHomeworks" :key="hw.id"
-                     class="day-item" @click="goHomework(hw)">
-                  <div class="day-bar" :style="{ background: subjColor(hw.subject) }"></div>
+                <div v-for="ev in pickedDayEvents" :key="ev.kind + '-' + ev.id"
+                     :class="['day-item', { 'day-test': ev.kind === 'test' }]"
+                     @click="goEvent(ev)">
+                  <div class="day-bar" :style="{ background: subjColor(ev.subject) }"></div>
                   <div class="day-main">
-                    <div class="day-title">{{ hw.title }}</div>
-                    <div class="day-meta">{{ hw.subject }} · {{ hw.assignedClass }}</div>
+                    <div class="day-title">
+                      <span v-if="ev.kind === 'test'" class="day-tag">TEST</span>
+                      {{ ev.title }}
+                    </div>
+                    <div class="day-meta">{{ ev.subject }} · {{ ev.assignedClass }}</div>
                   </div>
                 </div>
               </div>
@@ -257,6 +282,15 @@ function subjColor(s) { return SUBJECT_COLOR[s] || '#cfd8e3' }
   font-size: 10px; padding: 2px 6px; border-radius: 4px;
   color: #333; font-weight: 700;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ev-dot.ev-test {
+  border: 1.5px solid #cc0000;
+  color: #cc0000;
+}
+.day-test .day-bar { background: #cc0000 !important; }
+.day-tag {
+  background: #cc0000; color: white; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; margin-right: 6px;
 }
 .ev-more { font-size: 10px; color: #888; }
 

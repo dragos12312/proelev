@@ -45,6 +45,7 @@ async function logout() {
         <strong>{{ currentUser.name }}</strong>
         <span class="role">{{ currentUser.role }}</span>
       </div>
+      <button class="profile-btn" @click="router.push('/profile'); open = false">Profil & setări</button>
       <button class="logout" @click="logout">Deconectare</button>
     </div>
   </div>
@@ -84,6 +85,13 @@ async function logout() {
 }
 .who { display: flex; flex-direction: column; line-height: 1.2; font-size: 13px; }
 .role { color: #888; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+.profile-btn {
+  background: #185FA5; color: white; border: none;
+  border-radius: 6px; padding: 8px 10px;
+  cursor: pointer; font-size: 13px; font-weight: 700;
+  font-family: 'Inter', sans-serif;
+}
+.profile-btn:hover { background: #134d87; }
 .logout {
   background: #cc0000; color: white; border: none;
   border-radius: 6px; padding: 8px 10px;
