@@ -282,10 +282,10 @@ function highlightCell(slotSubject) {
         <div v-else>
           <!-- inline tab bar -->
           <div class="tabs">
-            <button :class="{ active: tab === 'anunturi' }" @click="switchTab('anunturi')">📣 ANUNȚURI</button>
-            <button :class="{ active: tab === 'orar' }"     @click="switchTab('orar')">🗓️ ORAR</button>
-            <button :class="{ active: tab === 'prezenta' }" @click="switchTab('prezenta')">✅ PREZENȚĂ</button>
-            <button :class="{ active: tab === 'resurse' }"  @click="switchTab('resurse')">📚 RESURSE</button>
+            <button :class="{ active: tab === 'anunturi' }" @click="switchTab('anunturi')">ANUNȚURI</button>
+            <button :class="{ active: tab === 'orar' }"     @click="switchTab('orar')">ORAR</button>
+            <button :class="{ active: tab === 'prezenta' }" @click="switchTab('prezenta')">PREZENȚĂ</button>
+            <button :class="{ active: tab === 'resurse' }"  @click="switchTab('resurse')">RESURSE</button>
           </div>
 
           <div v-if="errMsg" class="api-error">{{ errMsg }}</div>
@@ -433,7 +433,7 @@ function highlightCell(slotSubject) {
           <!-- ── RESURSE tab ─────────────────────────────────────────── -->
           <section v-else-if="tab === 'resurse'">
             <div v-if="feed && feed.canPostFile" class="uploader">
-              <label class="upl-label">📚 Încarcă resursă (max 5 MB)</label>
+              <label class="upl-label">Încarcă resursă (max 5 MB)</label>
               <div class="upl-row">
                 <input class="res-file" type="file" @change="onPickFile" />
                 <button class="btn-upl" :disabled="uploading || !filePick" @click="uploadResource">
@@ -449,7 +449,6 @@ function highlightCell(slotSubject) {
                   <span class="feed-time">{{ fmtTime(p.createdAt) }}</span>
                 </div>
                 <div class="feed-file">
-                  <span class="file-icon">📎</span>
                   <span class="file-name">{{ p.fileName }}</span>
                   <button class="btn-dl" @click="downloadResource(p)">Descarcă</button>
                 </div>

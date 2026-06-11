@@ -68,7 +68,6 @@ const CONFETTI = Array.from({ length: 24 }, (_, i) => ({
            class="confetti" :style="{ left: c.left + '%', background: c.color, animationDelay: c.delay + 's' }"></div>
 
       <div class="splash-card">
-        <div class="big-emoji">🎉</div>
         <h1>Felicitări! Ai progresat enorm!</h1>
         <p class="subj">la <b>{{ event.subjectName }}</b></p>
 

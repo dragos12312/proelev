@@ -33,14 +33,17 @@ VALID_STATUSES = {"present", "absent", "late", "excused"}
 
 
 def _teacher_owns_class(db: Session, user: User, class_id: int) -> bool:
+    """Admin owns everything. Under the new access model, any teacher is
+    effectively a teacher of every class for the subjects they teach, so
+    any teacher with at least one assignment can mark attendance for any
+    class."""
     if user.role and user.role.name == ROLE_ADMIN:
         return True
     if not user.role or user.role.name != ROLE_TEACHER:
         return False
     return db.execute(
         select(teacher_assignment.c.user_id).where(
-            teacher_assignment.c.user_id  == user.id,
-            teacher_assignment.c.class_id == class_id,
+            teacher_assignment.c.user_id == user.id
         )
     ).first() is not None
 
@@ -226,15 +229,14 @@ def teacher_classes(
         return [{"id": r.id, "name": r.name} for r in rows]
     if role != ROLE_TEACHER:
         raise HTTPException(status_code=403, detail="Doar profesorii/adminul")
-    cls_ids = db.execute(
-        select(teacher_assignment.c.class_id).where(
+    # under the new model the teacher has access to every class for the
+    # subjects they teach, so the dropdown shows all 8
+    has_any = db.execute(
+        select(teacher_assignment.c.user_id).where(
             teacher_assignment.c.user_id == user.id
-        ).distinct()
-    ).all()
-    out = []
-    for (cid,) in cls_ids:
-        cls = db.get(SchoolClass, cid)
-        if cls:
-            out.append({"id": cls.id, "name": cls.name})
-    out.sort(key=lambda r: r["name"])
-    return out
+        )
+    ).first() is not None
+    if not has_any:
+        return []
+    rows = db.query(SchoolClass).order_by(SchoolClass.name).all()
+    return [{"id": r.id, "name": r.name} for r in rows]

@@ -1,14 +1,14 @@
 <script setup>
-// silver chat, full page version, same layout as the other pages so the
-// header and the profile avatar match the rest of the app
-import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+// silver chat, full page version. On wide screens the rooms pane and the
+// conversation sit side by side; on mobile we switch to one-pane-at-a-time
+// (room list OR conversation) with a back button at the top of the chat.
+import { ref, nextTick, watch, onMounted, onUnmounted, computed } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
 import {
   rooms, otherUsers, activeRoom, messages, chatOpen,
   loadSidebar, selectRoom, sendMessage, openDmWith, createSpecialRoom,
-  markRead,
 } from '../stores/chat.js'
 import { currentUser, isAdmin } from '../utils/auth.js'
 
@@ -16,17 +16,29 @@ const draft       = ref('')
 const newRoomName = ref('')
 const messagesBox = ref(null)
 
+// viewport tracking so the one-pane mobile flow knows when to flip
+const viewportW = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+function onResize() { viewportW.value = window.innerWidth }
+const isMobile = computed(() => viewportW.value <= 700)
+
+// on mobile we toggle between two screens: 'list' vs 'conv'
+const mobileScreen = ref('list')   // 'list' | 'conv'
+
 // while we are on this page the store knows the user is reading,
 // so badges dont accumulate for the room they are looking at
 onMounted(async () => {
   chatOpen.value = true
+  window.addEventListener('resize', onResize)
   await loadSidebar()
   // pick the global room if nothing is selected yet
   if (!activeRoom.value && rooms.value.length) {
     selectRoom(rooms.value.find(r => r.type === 'global') || rooms.value[0])
   }
 })
-onUnmounted(() => { chatOpen.value = false })
+onUnmounted(() => {
+  chatOpen.value = false
+  window.removeEventListener('resize', onResize)
+})
 
 // scroll to the bottom whenever a new message lands or the room changes
 watch([messages, activeRoom], async () => {
@@ -41,12 +53,29 @@ function send() {
   draft.value = ''
 }
 
-async function pickUser(other) { await openDmWith(other) }
+function pickRoom(r) {
+  selectRoom(r)
+  if (isMobile.value) mobileScreen.value = 'conv'
+}
+
+async function pickUser(other) {
+  await openDmWith(other)
+  if (isMobile.value) mobileScreen.value = 'conv'
+}
 
 async function makeRoom() {
   if (!newRoomName.value.trim()) return
   await createSpecialRoom(newRoomName.value)
   newRoomName.value = ''
+}
+
+function backToList() { mobileScreen.value = 'list' }
+
+function roomMark(r) {
+  // tiny tag instead of an emoji to keep things text-only
+  if (r.type === 'global') return 'gl'
+  if (r.type === 'dm')     return 'dm'
+  return '#'
 }
 </script>
 
@@ -61,16 +90,19 @@ async function makeRoom() {
           <h2 class="page-title">MESAJE</h2>
         </div>
 
-        <div class="chat-wrap">
-          <!-- inner sidebar with rooms and dm targets -->
+        <div class="chat-wrap"
+             :class="{ 'show-conv': isMobile && mobileScreen === 'conv',
+                       'show-list': isMobile && mobileScreen === 'list' }">
+
+          <!-- rooms + people pane -->
           <aside class="rooms-pane">
             <h4>Camere</h4>
             <ul class="room-list">
               <li v-for="r in rooms" :key="r.id"
                   :class="{ active: activeRoom && activeRoom.id === r.id }"
-                  @click="selectRoom(r)">
-                <span class="room-type">{{ r.type === 'global' ? '🌐' : r.type === 'dm' ? '💬' : '#' }}</span>
-                {{ r.name }}
+                  @click="pickRoom(r)">
+                <span class="room-tag">{{ roomMark(r) }}</span>
+                <span class="room-name">{{ r.name }}</span>
               </li>
             </ul>
 
@@ -78,7 +110,7 @@ async function makeRoom() {
             <ul class="user-list">
               <li v-for="u in otherUsers" :key="u.id" @click="pickUser(u)">
                 <span class="dot" :class="u.role === 'admin' ? 'admin' : 'user'"></span>
-                {{ u.name }}
+                <span class="room-name">{{ u.name }}</span>
               </li>
             </ul>
 
@@ -89,11 +121,14 @@ async function makeRoom() {
             </div>
           </aside>
 
-          <!-- right pane, active conversation -->
+          <!-- conversation pane -->
           <section class="conv">
             <div v-if="!activeRoom" class="placeholder">Selectează o cameră</div>
             <template v-else>
-              <div class="conv-title">{{ activeRoom.name }}</div>
+              <div class="conv-title">
+                <button v-if="isMobile" class="back-btn" @click="backToList">&lt; Camere</button>
+                <span class="conv-name">{{ activeRoom.name }}</span>
+              </div>
               <div class="messages" ref="messagesBox">
                 <div v-for="m in messages" :key="m.id" class="msg"
                      :class="{ own: currentUser && m.author_id === currentUser.id }">
@@ -157,7 +192,13 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 .room-list li:hover, .user-list li:hover { background: #f0f0f0; }
 .room-list li.active { background: #e0ecf8; color: #185FA5; font-weight: 600; }
-.room-type { width: 18px; text-align: center; }
+.room-tag {
+  min-width: 22px; padding: 2px 6px; border-radius: 4px;
+  background: #185FA5; color: white;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  text-align: center;
+}
+.room-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.admin { background: #cc0000; }
 .dot.user  { background: #2a9d2a; }
@@ -178,7 +219,15 @@ ul { list-style: none; padding: 0; margin: 0; }
 .conv-title {
   padding: 10px 16px; border-bottom: 1px solid #e0e0e0;
   font-weight: 600; color: #333; font-size: 14px;
+  display: flex; align-items: center; gap: 10px;
 }
+.back-btn {
+  background: none; border: none; color: #185FA5; cursor: pointer;
+  padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 13px;
+  font-family: 'Inter', sans-serif;
+}
+.back-btn:hover { background: #f0f5fb; }
+.conv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .messages {
   flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column;
   gap: 10px; background: #fafafa;
@@ -201,20 +250,36 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 .input-row input {
   flex: 1; padding: 8px 12px; border-radius: 18px; border: 1px solid #ccc;
-  font-size: 13px; outline: none;
+  font-size: 14px; outline: none;
 }
 .input-row input:focus { border-color: #185FA5; }
 .input-row button {
   padding: 8px 18px; border-radius: 18px; background: #185FA5; color: white;
-  border: none; cursor: pointer; font-size: 13px;
+  border: none; cursor: pointer; font-size: 13px; font-weight: 700;
+  font-family: 'Inter', sans-serif;
 }
 .input-row button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ── MOBILE: one pane at a time ─────────────────────────────────── */
 @media (max-width: 700px) {
-  .rooms-pane { width: 180px; }
-  .chat-wrap { height: calc(100vh - 220px); }
-}
-@media (max-width: 480px) {
-  .rooms-pane { width: 140px; padding: 8px; }
+  .chat-wrap {
+    height: calc(100vh - 180px);
+    min-height: 0;
+    flex-direction: row;
+  }
+  /* default mobile state shows the room list, conv hidden */
+  .chat-wrap.show-list .rooms-pane { width: 100%; max-width: 100%; border-right: none; }
+  .chat-wrap.show-list .conv       { display: none; }
+
+  /* tapping a room flips to the conv pane fullscreen */
+  .chat-wrap.show-conv .rooms-pane { display: none; }
+  .chat-wrap.show-conv .conv       { flex: 1; }
+
+  .messages { padding: 10px 12px; }
+  .msg { max-width: 88%; font-size: 14px; }
+  .input-row { padding: 8px 10px; }
+  .input-row input { font-size: 16px; padding: 9px 12px; }  /* 16px = no iOS auto-zoom */
+  .input-row button { padding: 9px 16px; }
+  .conv-title { padding: 8px 12px; }
 }
 </style>

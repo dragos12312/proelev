@@ -31,7 +31,7 @@ async function openIt() {
 <template>
   <transition name="toast">
     <div v-if="visible && lastNotification" class="toast" @click="openIt">
-      <div class="dot">💬</div>
+      <div class="dot">m</div>
       <div class="body">
         <div class="title">Mesaj nou de la {{ lastNotification.message.author_name }}</div>
         <div class="text">{{ lastNotification.message.text }}</div>

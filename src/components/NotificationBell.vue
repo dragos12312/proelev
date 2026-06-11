@@ -110,7 +110,7 @@ function fmtTime(iso) {
 <template>
   <div v-if="isAuthed" class="notif-wrap">
     <button class="notif-bell" :class="{ active: open }" @click="toggle" aria-label="Notificări">
-      <span class="bell-icon">🔔</span>
+      <span class="bell-icon">N</span>
       <span v-if="unread > 0" class="badge">{{ unread > 99 ? '99+' : unread }}</span>
     </button>
     <transition name="panel">

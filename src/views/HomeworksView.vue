@@ -221,7 +221,7 @@ const sortedHomeworks = computed(() => {
     <AppProfile />
 
     <div v-if="offline" class="offline-banner">
-      ⚠️ Ești offline (rețea sau server indisponibil).
+      Ești offline (rețea sau server indisponibil).
       <span v-if="pendingOps > 0"> {{ pendingOps }} modificări în așteptare — se vor sincroniza automat.</span>
       <span v-else> Modificările vor fi sincronizate când conexiunea revine.</span>
     </div>

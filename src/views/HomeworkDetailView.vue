@@ -288,7 +288,7 @@ function goToStats() {
           <div v-if="homework.description" class="hw-desc">{{ homework.description }}</div>
           <div v-if="homework.hasFile" class="hw-attach">
             <button class="btn-attach" @click="downloadHomeworkAttachment">
-              📎 Descarcă fișierul atașat ({{ homework.fileName || 'fișier' }})
+              Descarcă fișierul atașat ({{ homework.fileName || 'fișier' }})
             </button>
           </div>
         </div>
@@ -335,7 +335,7 @@ function goToStats() {
             Atașează un fișier (opțional, max 1 MB)
             <input type="file" @change="onFilePicked" />
           </label>
-          <div v-if="submissionFile" class="muted small">📎 {{ submissionFile.name }}</div>
+          <div v-if="submissionFile" class="muted small">Fișier ales: {{ submissionFile.name }}</div>
           <p class="muted small">Trebuie să trimiți text, un fișier, sau ambele.</p>
           <div v-if="submissionError" class="api-error">{{ submissionError }}</div>
           <button class="btn-submit" :disabled="submissionBusy" @click="submitMine">

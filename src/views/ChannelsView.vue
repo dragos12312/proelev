@@ -193,7 +193,7 @@ onMounted(async () => {
 
               <!-- Resource upload, teachers + admin only -->
               <div v-if="feed.canPostFile" class="uploader">
-                <label class="upl-label">📚 Încarcă resursă (PDF, imagine, etc — max 5 MB)</label>
+                <label class="upl-label">Încarcă resursă (PDF, imagine, etc — max 5 MB)</label>
                 <div class="upl-row">
                   <input class="ch-file" type="file" @change="onPickFile" />
                   <button class="btn-upl" :disabled="fileBusy || !filePick" @click="uploadFile">
@@ -213,7 +213,6 @@ onMounted(async () => {
                   </div>
                   <div v-if="p.kind === 'post'" class="feed-text">{{ p.text }}</div>
                   <div v-else class="feed-file">
-                    <span class="file-icon">📎</span>
                     <span class="file-name">{{ p.fileName }}</span>
                     <button class="btn-dl" @click="downloadFile(p)">Descarcă</button>
                   </div>

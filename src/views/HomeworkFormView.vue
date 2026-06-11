@@ -223,7 +223,7 @@ function cancel() {
           <div class="field">
             <label>Fișier (opțional)</label>
             <input type="file" accept="image/*,.pdf" @change="handleFile" />
-            <span class="file-name" v-if="form.fileName">📎 {{ form.fileName }}</span>
+            <span class="file-name" v-if="form.fileName">Fișier: {{ form.fileName }}</span>
           </div>
 
           <span class="error" v-if="errors.content">{{ errors.content }}</span>

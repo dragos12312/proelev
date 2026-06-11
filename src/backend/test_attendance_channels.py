@@ -39,7 +39,8 @@ class TestAttendance:
     def test_teacher_marks_and_student_reads(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         classes = client.get("/attendance/teacher/classes", headers=_h(tok)).json()
-        cls_id = classes[0]["id"]
+        # explicitly pick 4A since that's the only class with a real seeded student
+        cls_id = next(c["id"] for c in classes if c["name"] == "4A")
         roster = client.get(f"/attendance/roster/{cls_id}", headers=_h(tok)).json()
         student_id = roster[0]["userId"]
 
@@ -65,7 +66,7 @@ class TestAttendance:
     def test_absent_mark_fires_notification(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         classes = client.get("/attendance/teacher/classes", headers=_h(tok)).json()
-        cls_id = classes[0]["id"]
+        cls_id = next(c["id"] for c in classes if c["name"] == "4A")
         roster = client.get(f"/attendance/roster/{cls_id}", headers=_h(tok)).json()
         student_id = roster[0]["userId"]
 
@@ -86,10 +87,34 @@ class TestChannels:
         chs = r.json()
         assert any(c["className"] == "4A" and c["subjectName"] == "Matematică" for c in chs)
 
+    def test_teacher_sees_all_classes_for_their_subject(self):
+        # prof teaches Matematică, so under the new model they should see
+        # Matematică for every class 1A through 4B
+        tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
+        chs = client.get("/channels/mine", headers=_h(tok)).json()
+        mat_classes = {c["className"] for c in chs if c["subjectName"] == "Matematică"}
+        assert {"1A", "1B", "2A", "2B", "3A", "3B", "4A", "4B"}.issubset(mat_classes)
+
+    def test_student_sees_every_subject_for_own_class(self):
+        # elev is in 4A, should see all 7 subjects for 4A
+        elev = login_three_factor(client, "elev@proelev.ro", "Elev1234")
+        chs = client.get("/channels/mine", headers=_h(elev)).json()
+        my_subjects = {c["subjectName"] for c in chs if c["className"] == "4A"}
+        assert "Geografie" in my_subjects
+        assert "Matematică" in my_subjects
+        assert "Limba Română" in my_subjects
+
+    def test_student_cannot_see_other_class_channels(self):
+        elev = login_three_factor(client, "elev@proelev.ro", "Elev1234")
+        chs = client.get("/channels/mine", headers=_h(elev)).json()
+        other = [c for c in chs if c["className"] != "4A"]
+        assert other == []
+
     def test_teacher_posts_and_student_reads(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         chs = client.get("/channels/mine", headers=_h(tok)).json()
-        ch  = chs[0]
+        # need a channel both prof and elev can see: (4A, Matematică)
+        ch = next(c for c in chs if c["className"] == "4A" and c["subjectName"] == "Matematică")
         r = client.post(
             f"/channels/{ch['classId']}/{ch['subjectId']}/post",
             headers=_h(tok),
@@ -106,7 +131,7 @@ class TestChannels:
         chs = client.get("/channels/mine", headers=_h(elev)).json()
         if not chs:
             pytest.skip("no channels visible to student")
-        ch = chs[0]
+        ch = next(c for c in chs if c["subjectName"] == "Matematică")
         r = client.post(
             f"/channels/{ch['classId']}/{ch['subjectId']}/file",
             headers=_h(elev),
@@ -117,7 +142,8 @@ class TestChannels:
     def test_teacher_uploads_and_student_downloads(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         chs = client.get("/channels/mine", headers=_h(tok)).json()
-        ch = chs[0]
+        # need a channel both prof and elev can see, and prof can upload to
+        ch = next(c for c in chs if c["className"] == "4A" and c["subjectName"] == "Matematică")
         up = client.post(
             f"/channels/{ch['classId']}/{ch['subjectId']}/file",
             headers=_h(tok),
@@ -134,7 +160,8 @@ class TestChannels:
     def test_post_notifies_other_members(self):
         tok = login_three_factor(client, "prof@proelev.ro", "Profesor1")
         chs = client.get("/channels/mine", headers=_h(tok)).json()
-        ch = chs[0]
+        # pick (4A, Matematică) so the elev (who's in 4A) gets notified
+        ch = next(c for c in chs if c["className"] == "4A" and c["subjectName"] == "Matematică")
         client.post(
             f"/channels/{ch['classId']}/{ch['subjectId']}/post",
             headers=_h(tok), data={"text": "Anunț nou pentru toți"},

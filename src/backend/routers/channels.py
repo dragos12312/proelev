@@ -36,39 +36,43 @@ MAX_RESOURCE_BYTES = 5 * 1024 * 1024  # 5 MB resource files
 
 
 def _user_channels(db: Session, user: User) -> list[tuple[int, int]]:
-    """Return the list of (class_id, subject_id) channels this user can read."""
+    """Return the list of (class_id, subject_id) channels this user can read.
+
+    Access model (post-redesign):
+      - admin/user : every (class, subject) combo in the catalog
+      - teacher    : every CLASS × every subject they teach (so a Matematică
+                     teacher sees the Matematică channel for 1A through 4B)
+      - student    : every SUBJECT × their own class
+      - parent     : every SUBJECT × each child's class
+    A channel "exists" implicitly even without any teacher_assignment row.
+    """
     role = user.role.name if user.role else None
+    from models import SchoolClass, Subject as SubjModel
+
+    all_class_ids   = [c.id for c in db.query(SchoolClass).all()]
+    all_subject_ids = [s.id for s in db.query(SubjModel).all()]
+
     if role in (ROLE_ADMIN, ROLE_USER):
-        rows = db.execute(select(teacher_assignment.c.class_id, teacher_assignment.c.subject_id).distinct()).all()
-        return [(c, s) for c, s in rows]
+        return [(c, s) for c in all_class_ids for s in all_subject_ids]
     if role == ROLE_TEACHER:
-        rows = db.execute(
-            select(teacher_assignment.c.class_id, teacher_assignment.c.subject_id).where(
+        # subjects this teacher is assigned to (any class)
+        sub_ids = [r[0] for r in db.execute(
+            select(teacher_assignment.c.subject_id).where(
                 teacher_assignment.c.user_id == user.id
-            )
-        ).all()
-        return [(c, s) for c, s in rows]
+            ).distinct()
+        ).all()]
+        return [(c, s) for c in all_class_ids for s in sub_ids]
     if role == ROLE_STUDENT:
         if user.class_id is None:
             return []
-        rows = db.execute(
-            select(teacher_assignment.c.class_id, teacher_assignment.c.subject_id).where(
-                teacher_assignment.c.class_id == user.class_id
-            ).distinct()
-        ).all()
-        return [(c, s) for c, s in rows]
+        return [(user.class_id, s) for s in all_subject_ids]
     if role == ROLE_PARENT:
         out: set[tuple[int, int]] = set()
         for child in user.children:
             if child.class_id is None:
                 continue
-            rows = db.execute(
-                select(teacher_assignment.c.class_id, teacher_assignment.c.subject_id).where(
-                    teacher_assignment.c.class_id == child.class_id
-                ).distinct()
-            ).all()
-            for c, s in rows:
-                out.add((c, s))
+            for s in all_subject_ids:
+                out.add((child.class_id, s))
         return list(out)
     return []
 
@@ -86,8 +90,16 @@ def _can_post_text(db: Session, user: User, class_id: int, subject_id: int) -> b
 
 def _can_post_file(db: Session, user: User, class_id: int, subject_id: int) -> bool:
     role = user.role.name if user.role else None
-    if role in (ROLE_ADMIN, ROLE_TEACHER):
+    if role == ROLE_ADMIN:
         return _can_read(db, user, class_id, subject_id)
+    if role == ROLE_TEACHER:
+        # teacher can upload to any (class, subject) where subject is one they teach
+        return _can_read(db, user, class_id, subject_id) and db.execute(
+            select(teacher_assignment.c.user_id).where(
+                teacher_assignment.c.user_id    == user.id,
+                teacher_assignment.c.subject_id == subject_id,
+            )
+        ).first() is not None
     return False
 
 

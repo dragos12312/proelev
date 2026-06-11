@@ -222,7 +222,7 @@ function goToHwStatistics() { router.push(`/homeworks/${id.value}/hwstatistics`)
                   </ul>
                 </div>
                 <p v-if="!redNamedList.length && !grayNamedList.length" class="empty-note">
-                  Toți elevii au notă ≥ 5. 🎉
+                  Toți elevii au notă ≥ 5.
                 </p>
               </div>
             </div>

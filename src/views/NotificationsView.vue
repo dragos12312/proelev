@@ -109,7 +109,7 @@ onMounted(reload)
 
         <div v-if="loading" class="muted">Se încarcă...</div>
         <div v-else-if="items.length === 0" class="empty">
-          <p v-if="filter === 'unread'">Nicio notificare necitită. 🎉</p>
+          <p v-if="filter === 'unread'">Nicio notificare necitită.</p>
           <p v-else>Nicio notificare încă.</p>
         </div>
 
