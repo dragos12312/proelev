@@ -210,15 +210,8 @@ def _maybe_seed_demo_content(db: Session) -> None:
         },
     ]
 
-    # a school-wide announcement so the dashboard banner has content
-    admin = db.query(User).filter_by(email="admin@proelev.ro").first()
-    if admin:
-        db.add(SchoolAnnouncement(
-            title="Bun venit pe ProElev!",
-            body="Aceasta este versiunea de demonstrație. Conturile pre-create sunt în pagina de login.",
-            kind="info", created_by_user_id=admin.id,
-            created_at=datetime.utcnow(), pinned=1,
-        ))
+    # no school-wide announcement is seeded by default; admin can post one
+    # from the dashboard if they want a banner.
 
     # behavior grade for elev so the catalog has a value to render
     if prof and elev:
