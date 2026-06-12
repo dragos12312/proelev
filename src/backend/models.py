@@ -384,6 +384,29 @@ class BehaviorGrade(Base):
     )
 
 
+# Auto-generated school timetable. One row per (class, day, period); the
+# admin's "Generează orar" button rebuilds the whole table via a greedy
+# scheduler in routers/timetable.py. day = 0..4 (Mon-Fri), period = 1..5.
+class TimetableSlot(Base):
+    __tablename__ = "timetable_slot"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    class_id        = Column(Integer, ForeignKey("school_class.id", ondelete="CASCADE"), nullable=False)
+    subject_id      = Column(Integer, ForeignKey("subject.id",      ondelete="CASCADE"), nullable=False)
+    teacher_user_id = Column(Integer, ForeignKey("user.id",         ondelete="SET NULL"), nullable=True)
+    day             = Column(Integer, nullable=False)
+    period          = Column(Integer, nullable=False)
+
+    school_class = relationship("SchoolClass", foreign_keys=[class_id])
+    subject      = relationship("Subject",     foreign_keys=[subject_id])
+    teacher      = relationship("User",        foreign_keys=[teacher_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("class_id", "day", "period", name="uq_timetable_slot_class_day_period"),
+        Index("ix_timetable_slot_class_day", "class_id", "day"),
+    )
+
+
 # School-wide announcement. Admin (or "user" legacy role) posts one and it
 # fans out to every page header / dashboard. Distinct from per-channel
 # anunțuri which are scoped to (class, subject).

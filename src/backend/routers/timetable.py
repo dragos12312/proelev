@@ -5,13 +5,14 @@ The grid is hard-coded for demo purposes; in a real deployment this would
 come from a dedicated table. It's tied to the subjects we seed so the
 frontend can render "Matematică, prof. Ionescu" cells reliably.
 """
+import random
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from database import get_db
 from models import (
-    User, SchoolClass, teacher_assignment,
+    User, SchoolClass, Subject, TimetableSlot, teacher_assignment,
     ROLE_ADMIN, ROLE_USER, ROLE_TEACHER, ROLE_STUDENT, ROLE_PARENT,
 )
 from auth import get_current_user
@@ -156,37 +157,200 @@ def get_timetable(
         else:
             target_class_name = "4A"
 
-    if not target_class_name or target_class_name not in _TIMETABLE:
+    cls = db.query(SchoolClass).filter_by(name=target_class_name).first() if target_class_name else None
+    if not cls:
         raise HTTPException(status_code=404, detail="Orarul nu este disponibil pentru această clasă")
 
-    cls = db.query(SchoolClass).filter_by(name=target_class_name).first()
-    if not cls:
-        raise HTTPException(status_code=404, detail="Clasa nu există")
-
-    subjects_lookup = {s.name: s for s in db.query(__import__("models").Subject).all()}
-    teachers_lookup = _teachers_for_class_subject(db)
-
-    grid = _TIMETABLE[target_class_name]
+    # If admin has generated a real timetable, prefer those rows. Otherwise
+    # fall back to the hard-coded grid so the demo still works on a fresh
+    # install before anyone clicks "Generează orar".
+    db_rows = db.query(TimetableSlot).filter_by(class_id=cls.id).all()
     days_out = []
-    for di, day in enumerate(DAYS):
-        slots = []
-        for pi, (pnum, start, end) in enumerate(PERIODS):
-            subj_name = grid[pi][di] if pi < len(grid) and di < len(grid[0]) else ""
-            cell = {
-                "period": pnum, "start": start, "end": end,
-                "subject": subj_name or None,
-                "teachers": [],
-            }
-            if subj_name and subj_name in subjects_lookup:
-                sub = subjects_lookup[subj_name]
-                cell["teachers"] = teachers_lookup.get((cls.id, sub.id), [])
-            slots.append(cell)
-        days_out.append({"day": day, "slots": slots})
+    if db_rows:
+        by_dp = {(r.day, r.period): r for r in db_rows}
+        for di, day in enumerate(DAYS):
+            slots = []
+            for pi, (pnum, start, end) in enumerate(PERIODS):
+                period_num = int(pnum)
+                cell = {
+                    "period": pnum, "start": start, "end": end,
+                    "subject": None, "teachers": [],
+                }
+                row = by_dp.get((di, period_num))
+                if row:
+                    cell["subject"]  = row.subject.name if row.subject else None
+                    cell["teachers"] = [row.teacher.name] if row.teacher else []
+                slots.append(cell)
+            days_out.append({"day": day, "slots": slots})
+    else:
+        if target_class_name not in _TIMETABLE:
+            raise HTTPException(status_code=404, detail="Orarul nu este disponibil pentru această clasă")
+        subjects_lookup = {s.name: s for s in db.query(Subject).all()}
+        teachers_lookup = _teachers_for_class_subject(db)
+        grid = _TIMETABLE[target_class_name]
+        for di, day in enumerate(DAYS):
+            slots = []
+            for pi, (pnum, start, end) in enumerate(PERIODS):
+                subj_name = grid[pi][di] if pi < len(grid) and di < len(grid[0]) else ""
+                cell = {
+                    "period": pnum, "start": start, "end": end,
+                    "subject": subj_name or None,
+                    "teachers": [],
+                }
+                if subj_name and subj_name in subjects_lookup:
+                    sub = subjects_lookup[subj_name]
+                    cell["teachers"] = teachers_lookup.get((cls.id, sub.id), [])
+                slots.append(cell)
+            days_out.append({"day": day, "slots": slots})
 
     return {
         "class":   {"id": cls.id, "name": cls.name},
         "periods": [{"period": p, "start": s, "end": e} for (p, s, e) in PERIODS],
         "days":    days_out,
-        # so admins/teachers can switch between classes from the UI
-        "available_classes": sorted(_TIMETABLE.keys()),
+        "available_classes": sorted([c.name for c in db.query(SchoolClass).all()]),
+        "source":  "generated" if db_rows else "default",
     }
+
+
+# ── auto-generator ──────────────────────────────────────────────────
+
+# Weekly hours per subject. Tunable for the demo. Total must fit in
+# 5 days × 5 periods = 25 slots; we sum to 22 so some periods stay free.
+DEFAULT_HOURS = {
+    "Matematică":        5,
+    "Limba Română":      5,
+    "Științele naturii": 3,
+    "Limba Engleză":     3,
+    "Istorie":           2,
+    "Geografie":         2,
+    "Educație fizică":   2,
+}
+
+
+def _generate_timetable(db: Session) -> dict:
+    """Greedy scheduler:
+      for each class, fill 5 days × 5 periods with subjects chosen by their
+      remaining weekly-hours budget. Constraints:
+        * a teacher can't be in two classes at the same (day, period)
+        * a subject can appear at most once per day per class (mostly avoids
+          double-blocks — exception is when there's no other choice)
+    The result is deterministic-ish per run thanks to a fixed shuffle seed,
+    so admins get repeatable demos.
+    """
+    rng = random.Random(42)
+
+    db.query(TimetableSlot).delete()
+    db.commit()
+
+    classes  = sorted(db.query(SchoolClass).all(), key=lambda c: c.name)
+    subjects = sorted(db.query(Subject).all(),     key=lambda s: s.name)
+
+    # one teacher per (class, subject) if seeded; otherwise None
+    teacher_for: dict[tuple[int, int], int | None] = {}
+    rows = db.execute(
+        select(teacher_assignment.c.class_id, teacher_assignment.c.subject_id,
+               teacher_assignment.c.user_id)
+    ).all()
+    for cid, sid, uid in rows:
+        teacher_for.setdefault((cid, sid), uid)
+
+    # teacher_id, day, period -> taken
+    teacher_busy: set[tuple[int, int, int]] = set()
+    n_placed = 0
+
+    for cls in classes:
+        # remaining hours this class needs per subject
+        remaining = {s.id: DEFAULT_HOURS.get(s.name, 2) for s in subjects}
+        # subjects already placed today (per day)
+        per_day: dict[int, set[int]] = {d: set() for d in range(5)}
+
+        for day in range(5):
+            for period in range(1, 6):
+                # try to place a subject:
+                #   strict pass — respect "max 1/day"
+                placed = _try_place(
+                    db, cls, day, period, subjects, remaining, per_day,
+                    teacher_for, teacher_busy, rng,
+                    allow_same_day=False,
+                )
+                if not placed:
+                    # relaxed pass — if all "fresh" subjects are exhausted
+                    # for this day, let one repeat in this slot
+                    placed = _try_place(
+                        db, cls, day, period, subjects, remaining, per_day,
+                        teacher_for, teacher_busy, rng,
+                        allow_same_day=True,
+                    )
+                if placed:
+                    n_placed += 1
+
+    db.commit()
+    return {"slotsPlaced": n_placed, "classes": len(classes)}
+
+
+def _try_place(
+    db: Session,
+    cls: SchoolClass,
+    day: int, period: int,
+    subjects: list[Subject],
+    remaining: dict[int, int],
+    per_day: dict[int, set[int]],
+    teacher_for: dict[tuple[int, int], int | None],
+    teacher_busy: set[tuple[int, int, int]],
+    rng: random.Random,
+    *, allow_same_day: bool,
+) -> bool:
+    """Pick the best-fit subject for this slot. Prefers subjects with more
+    remaining hours so they spread out."""
+    candidates = []
+    for sub in subjects:
+        if remaining[sub.id] <= 0:
+            continue
+        if not allow_same_day and sub.id in per_day[day]:
+            continue
+        teacher_id = teacher_for.get((cls.id, sub.id))
+        if teacher_id is not None and (teacher_id, day, period) in teacher_busy:
+            continue
+        candidates.append((sub, teacher_id))
+    if not candidates:
+        return False
+    # primary key: most-remaining-hours; tie-broken by random shuffle so it
+    # doesn't always pick the alphabetically-first subject
+    rng.shuffle(candidates)
+    candidates.sort(key=lambda x: -remaining[x[0].id])
+    sub, teacher_id = candidates[0]
+    db.add(TimetableSlot(
+        class_id=cls.id, subject_id=sub.id,
+        teacher_user_id=teacher_id,
+        day=day, period=period,
+    ))
+    remaining[sub.id] -= 1
+    per_day[day].add(sub.id)
+    if teacher_id is not None:
+        teacher_busy.add((teacher_id, day, period))
+    return True
+
+
+@router.post("/generate")
+def generate_timetable(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin-only. Rebuilds every class's timetable from scratch."""
+    if not user.role or user.role.name != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Doar adminul")
+    summary = _generate_timetable(db)
+    return {"ok": True, **summary}
+
+
+@router.delete("/clear")
+def clear_timetable(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin-only. Clears all generated slots so the fallback grid takes over."""
+    if not user.role or user.role.name != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Doar adminul")
+    n = db.query(TimetableSlot).delete()
+    db.commit()
+    return {"ok": True, "deleted": n}

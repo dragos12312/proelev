@@ -907,6 +907,8 @@ export const gradebookApi = {
 // ORAR (timetable) feed, optionally filtered by class for admins/teachers
 export const timetableApi = {
     get: (className) => _json(`/timetable${className ? `?class=${encodeURIComponent(className)}` : ''}`),
+    generate: () => _json('/timetable/generate', { method: 'POST' }),
+    clear:    () => _json('/timetable/clear',    { method: 'DELETE' }),
 }
 
 // homework attachment, teacher uploads after creating, anyone with read

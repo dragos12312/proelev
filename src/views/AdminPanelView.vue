@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppProfile from '../components/AppProfile.vue'
-import { adminApi, statsApi, invitesApi, lookups } from '../api.js'
+import { adminApi, statsApi, invitesApi, lookups, timetableApi } from '../api.js'
 import { currentUser, isAdmin } from '../utils/auth.js'
 
 const router = useRouter()
@@ -167,6 +167,34 @@ onMounted(() => {
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
 })
+
+// timetable auto-generator state
+const ttBusy = ref(false)
+const ttMsg  = ref('')
+async function genTimetable() {
+  if (!confirm('Vrei să regenerezi orarul pentru toate clasele? Va înlocui orice orar existent.')) return
+  ttBusy.value = true; ttMsg.value = ''
+  try {
+    const r = await timetableApi.generate()
+    ttMsg.value = `Orar generat: ${r.slotsPlaced} sloturi pentru ${r.classes} clase.`
+  } catch (e) {
+    ttMsg.value = e.message || 'Eroare'
+  } finally {
+    ttBusy.value = false
+  }
+}
+async function clearTimetable() {
+  if (!confirm('Vrei să ștergi orarul generat? Se va reveni la cel implicit.')) return
+  ttBusy.value = true; ttMsg.value = ''
+  try {
+    const r = await timetableApi.clear()
+    ttMsg.value = `Șterse ${r.deleted} sloturi.`
+  } catch (e) {
+    ttMsg.value = e.message || 'Eroare'
+  } finally {
+    ttBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -243,6 +271,26 @@ onUnmounted(() => {
             Detectorul rulează automat la fiecare 30s în fundal. Apasă „Rulează detector AI"
             pentru a forța un ciclu imediat.
           </p>
+        </section>
+
+        <!-- timetable auto-generator -->
+        <section class="card">
+          <header>
+            <h3>Generator orar (problemă de optimizare)</h3>
+          </header>
+          <p class="muted">
+            Algoritm greedy: pentru fiecare clasă, atribuie subiecte pe sloturi astfel încât
+            să respecte ore/săptămână per materie și să evite conflictele de profesor.
+          </p>
+          <div class="tt-actions">
+            <button class="btn-go" :disabled="ttBusy" @click="genTimetable">
+              {{ ttBusy ? 'Se generează...' : 'Generează orar' }}
+            </button>
+            <button class="btn-cancel" :disabled="ttBusy" @click="clearTimetable">
+              Șterge orarul generat
+            </button>
+          </div>
+          <div v-if="ttMsg" class="api-info">{{ ttMsg }}</div>
         </section>
 
         <!-- assignment 6, invite code management -->
@@ -432,6 +480,15 @@ onUnmounted(() => {
 .page-title { font-size: clamp(18px, 3vw, 24px); color: #185FA5; font-weight: 700; }
 .muted { color: #888; font-size: 13px; }
 .api-error { background: #ffe5e5; color: #cc0000; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+.api-info  { background: #e0ecf8; color: #185FA5; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
+.muted     { color: #666; font-size: 13px; margin: 4px 0 12px; }
+.tt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-go { background: #2a9d2a; color: white; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-weight: 700; font-family: 'Inter', sans-serif; font-size: 13px; }
+.btn-go:hover:not(:disabled) { background: #228022; }
+.btn-go:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-cancel { background: #888; color: white; border: none; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-weight: 700; font-family: 'Inter', sans-serif; font-size: 13px; }
+.btn-cancel:hover:not(:disabled) { background: #666; }
+.btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 14px; margin-bottom: 16px; }
 .card header {
